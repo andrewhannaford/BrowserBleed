@@ -389,7 +389,14 @@ def deduplicate(hits: list[dict]) -> list[dict]:
 
 
 # ── Browser config ─────────────────────────────────────────────────────────────
-_APP_SUPPORT = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+# When invoked via sudo, ~ resolves to /var/root. Use the original user's home.
+_sudo_user = os.environ.get("SUDO_USER")
+if _sudo_user:
+    import pwd as _pwd
+    _home = _pwd.getpwnam(_sudo_user).pw_dir
+else:
+    _home = os.path.expanduser("~")
+_APP_SUPPORT = os.path.join(_home, "Library", "Application Support")
 
 # (display_name, process_name, user_data_path, keychain_name)
 BROWSERS = [
