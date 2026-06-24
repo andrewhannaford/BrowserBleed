@@ -1,0 +1,16 @@
+# Output
+browserbleed_output.txt
+
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+build/
+dist/
+
+# PyInstaller temp
+*.pkg
+
+# macOS
+.DS_Store
