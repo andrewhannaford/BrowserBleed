@@ -190,10 +190,11 @@ def sqlite_connect(path: str, retries: int = 8, delay: float = 0.25):
 
 # ── Keychain + crypto ──────────────────────────────────────────────────────────
 def get_keychain_password(service: str, account: str) -> bytes:
-    r = subprocess.run(
-        ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
-        capture_output=True, text=True,
-    )
+    sudo_user = os.environ.get("SUDO_USER")
+    cmd = ["security", "find-generic-password", "-s", service, "-a", account, "-w"]
+    if sudo_user:
+        cmd = ["sudo", "-u", sudo_user] + cmd
+    r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"Keychain lookup failed for '{service}': {r.stderr.strip()}")
     return r.stdout.strip().encode()
