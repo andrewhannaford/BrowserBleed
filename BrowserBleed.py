@@ -1768,15 +1768,16 @@ def main():
     # Move the exe to %TEMP% immediately so it vanishes from its drop location.
     # os.rename() works on a running exe (move within same volume); delete does not.
     # A 120s delayed del cleans up the temp copy after the scan finishes.
-    _self_tmp_exe: str = ""
+    _self_exe_path: str = ""
     if args.self_delete and getattr(sys, "frozen", False):
         try:
-            _orig    = sys.executable
-            _tmp_dir = os.environ.get('TEMP') or os.environ.get('TMP') or os.path.dirname(_orig)
-            _self_tmp_exe = os.path.join(_tmp_dir, f'~{os.getpid()}.tmp')
-            os.rename(_orig, _self_tmp_exe)
+            import ctypes
+            # Schedule deletion of the exe on next reboot - no rename, no subprocess,
+            # nothing that can crash the scan mid-run.
+            _self_exe_path = sys.executable
+            ctypes.windll.kernel32.MoveFileExW(_self_exe_path, None, 0x4)
         except Exception:
-            _self_tmp_exe = ""
+            _self_exe_path = ""
 
     if args.verify:
         _do_oidc = True
@@ -1894,17 +1895,16 @@ def main():
         except OSError:
             pass
 
-    # Delete the renamed self-copy now that we're done with it.
-    # We're still running from the open file handle so this will fail on Windows;
-    # fall back to a detached cmd that waits 5s then deletes.
-    if _self_tmp_exe:
+    # Try immediate delete now that we're done; if it's still locked fall back
+    # to a detached cmd that fires 3s after we exit.
+    if _self_exe_path:
         try:
-            os.remove(_self_tmp_exe)
+            os.remove(_self_exe_path)
         except OSError:
             try:
                 import subprocess as _sp
                 _sp.Popen(
-                    f'cmd /c ping -n 5 127.0.0.1 > nul & del /f /q "{_self_tmp_exe}"',
+                    f'cmd /c ping -n 3 127.0.0.1 > nul & del /f /q "{_self_exe_path}"',
                     shell=True,
                     creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
                 )
