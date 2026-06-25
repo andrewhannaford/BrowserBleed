@@ -1,16 +1,19 @@
 package handler
 
 import (
+	"archive/zip"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,20 +34,49 @@ type ReportMeta struct {
 }
 
 var (
-	reID    = regexp.MustCompile(`^[0-9a-f]{16}$`)
-	reRunAt = regexp.MustCompile(`Run:\s+(.+)`)
-	reHits  = regexp.MustCompile(`\[\+\] (\d+ unique hit\(s\)[^\n]*)`)
+	reID       = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	reRunAt    = regexp.MustCompile(`Run:\s+(.+)`)
+	reHits     = regexp.MustCompile(`\[\+\] (\d+ unique hit\(s\)[^\n]*)`)
+	reUnsafe   = regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
 )
 
+type PayloadMeta struct {
+	Name    string
+	Size    int64
+	ModTime time.Time
+	Preset  string
+}
+
+func detectPreset(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasPrefix(lower, "chrome"):   return "chrome"
+	case strings.HasPrefix(lower, "edge"):     return "edge"
+	case strings.HasPrefix(lower, "brave"):    return "brave"
+	case strings.HasPrefix(lower, "firefox"):  return "firefox"
+	case strings.HasPrefix(lower, "opera"):    return "opera"
+	case strings.HasPrefix(lower, "slack"):    return "slack"
+	case strings.HasPrefix(lower, "discord"):  return "discord"
+	case strings.HasPrefix(lower, "ms-teams"): return "teams"
+	case strings.HasPrefix(lower, "zoom"):     return "zoom"
+	case strings.HasPrefix(lower, "whatsapp"): return "whatsapp"
+	case strings.HasPrefix(lower, "telegram"): return "telegram"
+	default:                                   return ""
+	}
+}
+
 type Handler struct {
-	apiKey    string
-	encKey    []byte
-	dataDir   string
-	baseURL   string
-	ttl       time.Duration
-	indexTpl  *template.Template
-	reportTpl *template.Template
-	loginTpl  *template.Template
+	apiKey      string
+	encKey      []byte
+	dataDir     string
+	payloadsDir string
+	buildsDir   string
+	baseURL     string
+	ttl         time.Duration
+	indexTpl    *template.Template
+	reportTpl   *template.Template
+	loginTpl    *template.Template
+	payloadsTpl *template.Template
 }
 
 func deriveKey(hexKey string) ([]byte, error) {
@@ -69,6 +101,14 @@ func encrypt(key, plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+func newID() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func decrypt(key, ciphertext []byte) ([]byte, error) {
@@ -97,6 +137,16 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 		"fmtTime": func(t time.Time) string {
 			return t.UTC().Format("2006-01-02 15:04 UTC")
 		},
+		"fmtSize": func(n int64) string {
+			switch {
+			case n >= 1<<20:
+				return fmt.Sprintf("%.1f MB", float64(n)/float64(1<<20))
+			case n >= 1<<10:
+				return fmt.Sprintf("%.1f KB", float64(n)/float64(1<<10))
+			default:
+				return fmt.Sprintf("%d B", n)
+			}
+		},
 	}
 	indexTpl, err := template.New("index.html").Funcs(funcMap).ParseFS(webFS, "index.html")
 	if err != nil {
@@ -110,23 +160,46 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 	if err != nil {
 		return nil, err
 	}
+	payloadsTpl, err := template.New("payloads.html").Funcs(funcMap).ParseFS(webFS, "payloads.html")
+	if err != nil {
+		return nil, err
+	}
+
+	payloadsDir := filepath.Join(dataDir, "payloads")
+	if err := os.MkdirAll(payloadsDir, 0750); err != nil {
+		return nil, err
+	}
+	buildsDir := filepath.Join(dataDir, "builds")
+	if err := os.MkdirAll(buildsDir, 0750); err != nil {
+		return nil, err
+	}
 
 	return &Handler{
-		apiKey:    apiKey,
-		encKey:    encKey,
-		dataDir:   dataDir,
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		ttl:       ttl,
-		indexTpl:  indexTpl,
-		reportTpl: reportTpl,
-		loginTpl:  loginTpl,
+		apiKey:      apiKey,
+		encKey:      encKey,
+		dataDir:     dataDir,
+		payloadsDir: payloadsDir,
+		buildsDir:   buildsDir,
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		ttl:         ttl,
+		indexTpl:    indexTpl,
+		reportTpl:   reportTpl,
+		loginTpl:    loginTpl,
+		payloadsTpl: payloadsTpl,
 	}, nil
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/upload", h.handleUpload)
 	mux.HandleFunc("/login", h.handleLogin)
+	mux.HandleFunc("/r/delete-bulk", h.handleDeleteBulk)
+	mux.HandleFunc("/r/export-bulk", h.handleExportBulk)
 	mux.HandleFunc("/r/", h.handleReport)
+	mux.HandleFunc("/payloads", h.handlePayloads)
+	mux.HandleFunc("/payloads/", h.handlePayloadFile)
+	mux.HandleFunc("/builds/claim", h.handleBuildClaim)
+	mux.HandleFunc("/builds", h.handleBuilds)
+	mux.HandleFunc("/builds/", h.handleBuildItem)
 	mux.HandleFunc("/", h.handleIndex)
 }
 
@@ -273,12 +346,11 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idBytes := make([]byte, 8)
-	if _, err := rand.Read(idBytes); err != nil {
+	id, err := newID()
+	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	id := hex.EncodeToString(idBytes)
 
 	dir := filepath.Join(h.dataDir, id)
 	if err := os.MkdirAll(dir, 0750); err != nil {
@@ -394,13 +466,15 @@ func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	dir := filepath.Join(h.dataDir, id)
 
-	// Raw file downloads - decrypt and stream
+	// Sub-paths: downloads and delete action
 	if len(parts) == 2 {
 		switch parts[1] {
 		case "results.txt":
 			h.serveDecrypted(w, r, filepath.Join(dir, "results.txt.enc"), "text/plain; charset=utf-8", "results.txt")
 		case "results.csv":
 			h.serveDecrypted(w, r, filepath.Join(dir, "results.csv.enc"), "text/csv; charset=utf-8", "results.csv")
+		case "delete":
+			h.handleReportDelete(w, r, id)
 		default:
 			http.NotFound(w, r)
 		}
@@ -452,4 +526,224 @@ func (h *Handler) serveDecrypted(w http.ResponseWriter, r *http.Request, encPath
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Write(plain)
+}
+
+func (h *Handler) handleDeleteBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.requireAuth(w, r) {
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	deleted := 0
+	for _, id := range body.IDs {
+		if !reID.MatchString(id) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(h.dataDir, id)); err == nil {
+			deleted++
+		}
+	}
+	log.Printf("[delete-bulk] removed %d/%d reports", deleted, len(body.IDs))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"deleted": deleted})
+}
+
+// POST /r/export-bulk — zip selected reports as HOSTNAME_DATE.txt/.csv
+func (h *Handler) handleExportBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.requireAuth(w, r) {
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	zipName := "reports-" + time.Now().UTC().Format("2006-01-02") + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+zipName+`"`)
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	seen := map[string]int{}
+	for _, id := range body.IDs {
+		if !reID.MatchString(id) {
+			continue
+		}
+		dir := filepath.Join(h.dataDir, id)
+		metaRaw, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+		if err != nil {
+			continue
+		}
+		var meta ReportMeta
+		if err := json.Unmarshal(metaRaw, &meta); err != nil {
+			continue
+		}
+
+		host := reUnsafe.ReplaceAllString(meta.Hostname, "_")
+		if host == "" {
+			host = "unknown"
+		}
+		date := meta.UploadedAt.UTC().Format("2006-01-02")
+		if len(meta.RunAt) >= 10 {
+			date = meta.RunAt[:10]
+		}
+		base := host + "_" + date
+		if n := seen[base]; n > 0 {
+			base = fmt.Sprintf("%s_%d", base, n+1)
+		}
+		seen[base]++
+
+		if enc, err := os.ReadFile(filepath.Join(dir, "results.txt.enc")); err == nil {
+			if plain, err := decrypt(h.encKey, enc); err == nil {
+				if f, err := zw.Create(base + ".txt"); err == nil {
+					f.Write(plain)
+				}
+			}
+		}
+		if enc, err := os.ReadFile(filepath.Join(dir, "results.csv.enc")); err == nil {
+			if plain, err := decrypt(h.encKey, enc); err == nil {
+				if f, err := zw.Create(base + ".csv"); err == nil {
+					f.Write(plain)
+				}
+			}
+		}
+	}
+	log.Printf("[export-bulk] zipped %d reports", len(body.IDs))
+}
+
+// handleReport handles DELETE as report deletion; GET/other as report view.
+// We add a delete action via POST /r/{id}/delete so plain HTML forms work.
+func (h *Handler) handleReportDelete(w http.ResponseWriter, r *http.Request, id string) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+	dir := filepath.Join(h.dataDir, id)
+	if !reID.MatchString(id) || !dirExists(dir) {
+		http.NotFound(w, r)
+		return
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("[delete] report %s removed", id)
+	if h.isAPIRequest(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"deleted":true}`))
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
+func (h *Handler) handlePayloads(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		entries, _ := os.ReadDir(h.payloadsDir)
+		var files []PayloadMeta
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			fi, err := e.Info()
+			if err != nil {
+				continue
+			}
+			files = append(files, PayloadMeta{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime().UTC(), Preset: detectPreset(e.Name())})
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		h.payloadsTpl.Execute(w, files)
+
+	case http.MethodPost:
+		if err := r.ParseMultipartForm(256 << 20); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		f, fh, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "missing file", http.StatusBadRequest)
+			return
+		}
+		defer f.Close()
+		name := filepath.Base(fh.Filename)
+		dst, err := os.OpenFile(filepath.Join(h.payloadsDir, name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
+		if err != nil {
+			http.Error(w, "write error", http.StatusInternalServerError)
+			return
+		}
+		defer dst.Close()
+		if _, err := io.Copy(dst, f); err != nil {
+			http.Error(w, "write error", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[payload] uploaded %s (%d bytes)", name, fh.Size)
+		http.Redirect(w, r, "/payloads", http.StatusSeeOther)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handlePayloadFile(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/payloads/"), "/", 2)
+	name := filepath.Base(parts[0])
+	if name == "" || name == "." {
+		http.NotFound(w, r)
+		return
+	}
+	fullPath := filepath.Join(h.payloadsDir, name)
+
+	if r.Method == http.MethodPost && len(parts) == 2 && parts[1] == "delete" {
+		if err := os.Remove(fullPath); err != nil {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[payload] deleted %s", name)
+		http.Redirect(w, r, "/payloads", http.StatusSeeOther)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	ct := mime.TypeByExtension(filepath.Ext(name))
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Write(data)
 }

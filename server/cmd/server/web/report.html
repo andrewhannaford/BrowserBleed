@@ -3,59 +3,136 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Report - {{.Meta.Hostname}}</title>
+<title>{{.Meta.Hostname}} — BrowserBleed</title>
 <style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #10141a;
+    --border: #1e2530;
+    --border-hover: #2d3748;
+    --text: #cdd5e0;
+    --text-dim: #5a6478;
+    --text-muted: #3d4758;
+    --accent: #4f8ef7;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --red-dim: rgba(248,81,73,0.08);
+    --radius: 8px;
+    --font-mono: "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+  }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; padding: 32px 24px; }
-  .back { color: #58a6ff; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 20px; }
-  .back:hover { text-decoration: underline; }
-  h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
-  .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
-  .meta-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px 16px; }
-  .meta-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-  .meta-value { font-size: 14px; color: #e6edf3; font-weight: 500; word-break: break-all; }
-  .meta-value.hits { color: #3fb950; font-family: monospace; }
-  .meta-value.expires { color: #d29922; font-size: 12px; }
-  .actions { display: flex; gap: 10px; margin-bottom: 20px; }
-  .btn { display: inline-block; padding: 6px 14px; border-radius: 6px; font-size: 13px; border: 1px solid #30363d; background: #21262d; color: #e6edf3; text-decoration: none; }
-  .btn:hover { background: #30363d; }
-  .section-title { font-size: 13px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-  pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 20px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; line-height: 1.6; color: #e6edf3; overflow-x: auto; white-space: pre; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+  .shell { max-width: 1100px; margin: 0 auto; padding: 0 24px 64px; }
+
+  /* ── Top bar ── */
+  .topbar { display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 32px; padding-top: 20px; }
+  .topbar-brand { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); padding-right: 24px; border-right: 1px solid var(--border); margin-right: 4px; white-space: nowrap; }
+  .nav-link { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 13px; font-weight: 500; color: var(--text-dim); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s; }
+  .nav-link:hover { color: var(--text); }
+  .nav-link.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .nav-icon { width: 14px; height: 14px; opacity: 0.7; }
+
+  /* ── Breadcrumb ── */
+  .breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; font-size: 13px; color: var(--text-dim); }
+  .breadcrumb a { color: var(--accent); text-decoration: none; }
+  .breadcrumb a:hover { text-decoration: underline; }
+  .breadcrumb-sep { color: var(--text-muted); }
+
+  /* ── Page header ── */
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+  .page-title { font-size: 22px; font-weight: 600; color: var(--text); }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+
+  /* ── Meta grid ── */
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .meta-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .meta-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 6px; }
+  .meta-value { font-size: 13px; color: var(--text); font-weight: 500; word-break: break-all; }
+  .meta-value.hits { color: var(--green); font-family: var(--font-mono); font-size: 12px; }
+  .meta-value.expires { color: var(--yellow); font-size: 12px; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: transparent; color: var(--text); text-decoration: none; cursor: pointer; font-family: inherit; transition: background 0.12s, border-color 0.12s; white-space: nowrap; }
+  .btn:hover { background: rgba(255,255,255,0.05); border-color: var(--border-hover); text-decoration: none; }
+  .btn-del { color: var(--red); border-color: rgba(248,81,73,0.3); }
+  .btn-del:hover { background: var(--red-dim); border-color: var(--red); }
+
+  /* ── Pre block ── */
+  .report-section { }
+  .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); margin-bottom: 10px; }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px; font-family: var(--font-mono); font-size: 12px; line-height: 1.65; color: var(--text); overflow-x: auto; white-space: pre; }
 </style>
 </head>
 <body>
-<a class="back" href="/">← All Reports</a>
-<h1>{{.Meta.Hostname}}</h1>
+<div class="shell">
+  <div class="topbar">
+    <span class="topbar-brand">BrowserBleed</span>
+    <a href="/" class="nav-link active">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 4h12v2H2V6zm0 4h8v2H2v-2z"/></svg>
+      Reports
+    </a>
+    <a href="/payloads" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>
+      Payloads
+    </a>
+  </div>
 
-<div class="meta-grid">
-  <div class="meta-card">
-    <div class="meta-label">Hostname</div>
-    <div class="meta-value">{{.Meta.Hostname}}</div>
+  <div class="breadcrumb">
+    <a href="/">Reports</a>
+    <span class="breadcrumb-sep">›</span>
+    <span>{{.Meta.Hostname}}</span>
   </div>
-  <div class="meta-card">
-    <div class="meta-label">Run At</div>
-    <div class="meta-value">{{if .Meta.RunAt}}{{.Meta.RunAt}}{{else}}-{{end}}</div>
+
+  <div class="page-header">
+    <h1 class="page-title">{{.Meta.Hostname}}</h1>
+    <div class="header-actions">
+      <a class="btn" href="/r/{{.Meta.ID}}/results.txt" download>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>
+        txt
+      </a>
+      {{if .Meta.HasCSV}}
+      <a class="btn" href="/r/{{.Meta.ID}}/results.csv" download>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>
+        csv
+      </a>
+      {{end}}
+      <form method="POST" action="/r/{{.Meta.ID}}/delete" style="margin:0" onsubmit="return confirm('Permanently delete this report?')">
+        <button class="btn btn-del" type="submit">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1.75a.25.25 0 0 1 .25-.25h2.5a.25.25 0 0 1 .25.25V3h-3V1.75zm4.5 0V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.748 1.748 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15z"/></svg>
+          Delete
+        </button>
+      </form>
+    </div>
   </div>
-  <div class="meta-card">
-    <div class="meta-label">Uploaded</div>
-    <div class="meta-value">{{fmtTime .Meta.UploadedAt}}</div>
+
+  <div class="meta-grid">
+    <div class="meta-card">
+      <div class="meta-label">Hostname</div>
+      <div class="meta-value">{{.Meta.Hostname}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Run At</div>
+      <div class="meta-value">{{if .Meta.RunAt}}{{.Meta.RunAt}}{{else}}—{{end}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Uploaded</div>
+      <div class="meta-value">{{fmtTime .Meta.UploadedAt}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Expires</div>
+      <div class="meta-value expires">{{fmtTime .Meta.ExpiresAt}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Hits</div>
+      <div class="meta-value hits">{{if .Meta.HitCount}}{{.Meta.HitCount}}{{else}}—{{end}}</div>
+    </div>
   </div>
-  <div class="meta-card">
-    <div class="meta-label">Expires</div>
-    <div class="meta-value expires">{{fmtTime .Meta.ExpiresAt}}</div>
-  </div>
-  <div class="meta-card">
-    <div class="meta-label">Hits</div>
-    <div class="meta-value hits">{{if .Meta.HitCount}}{{.Meta.HitCount}}{{else}}-{{end}}</div>
+
+  <div class="report-section">
+    <div class="section-label">Report Output</div>
+    <pre>{{.Content}}</pre>
   </div>
 </div>
-
-<div class="actions">
-  <a class="btn" href="/r/{{.Meta.ID}}/results.txt" download>Download .txt</a>
-  {{if .Meta.HasCSV}}<a class="btn" href="/r/{{.Meta.ID}}/results.csv" download>Download .csv</a>{{end}}
-</div>
-
-<div class="section-title">Report</div>
-<pre>{{.Content}}</pre>
 </body>
 </html>

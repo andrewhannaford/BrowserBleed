@@ -1,61 +1,75 @@
 #!/usr/bin/env bash
-# deploy-binary.sh - builds the Linux server binary and pushes it to the EC2.
-# Run from the repo root: bash deploy/deploy-binary.sh
+# deploy-binary.sh — cross-compile the Go server and push it to EC2.
+# Uses EC2 Instance Connect (AWS SSO) — no PEM file required.
+#
+# Prerequisites:
+#   aws sso login   (if your SSO session has expired)
+#
+# Run from the repo root:
+#   bash deploy/deploy-binary.sh
 
 set -euo pipefail
 
-source "$(dirname "$0")/config" 2>/dev/null || {
-  echo "[!] Copy deploy/config.example to deploy/config and fill in your values."
-  exit 1
-}
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/config"
+source "$SCRIPT_DIR/.provision-state"
 
-source "$(dirname "$0")/.provision-state"
+OS_USER="ec2-user"
+TEMP_KEY="$(mktemp /tmp/bb-deploy-key.XXXXXX)"
+TEMP_PUB="${TEMP_KEY}.pub"
 
-KEY="$(dirname "$0")/${KEY_NAME}.pem"
-# BatchMode=yes prevents SSH from consuming stdin (which breaks interactive read prompts below)
-SSH="ssh -i $KEY -o StrictHostKeyChecking=no -o BatchMode=yes ec2-user@$PUBLIC_IP"
-SCP="scp -i $KEY -o StrictHostKeyChecking=no"
+cleanup() { rm -f "$TEMP_KEY" "$TEMP_PUB"; }
+trap cleanup EXIT
 
 # ── Build Linux binary ────────────────────────────────────────────────────────
 echo "[*] Building server binary for linux/amd64..."
-(cd server && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../deploy/server-linux ./cmd/server/)
-echo "[+] Binary built: $(du -sh deploy/server-linux | cut -f1)"
+(cd "$SCRIPT_DIR/../server" && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../deploy/server-linux ./cmd/server/)
+echo "[+] Built: $(du -sh "$SCRIPT_DIR/server-linux" | cut -f1)"
+
+# ── EC2 Instance Connect: push a temp key (valid 60s) ────────────────────────
+echo "[*] Pushing temporary SSH key via EC2 Instance Connect..."
+rm -f "$TEMP_KEY"
+ssh-keygen -t rsa -b 2048 -f "$TEMP_KEY" -N "" -q
+aws ec2-instance-connect send-ssh-public-key \
+  --instance-id "$INSTANCE_ID" \
+  --instance-os-user "$OS_USER" \
+  --ssh-public-key "$(cat "$TEMP_PUB")" \
+  --region "${REGION:-us-east-1}" \
+  --output json | grep -q '"Success": true'
+echo "[+] Key pushed (60s window)"
+
+SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -i $TEMP_KEY"
+REMOTE="${OS_USER}@${PUBLIC_IP}"
 
 # ── Upload binary ─────────────────────────────────────────────────────────────
 echo "[*] Uploading binary..."
-$SCP deploy/server-linux "ec2-user@$PUBLIC_IP:/tmp/server-linux"
-$SSH "sudo mv /tmp/server-linux /opt/bb-reports/server && sudo chmod +x /opt/bb-reports/server && sudo chown bb-reports:bb-reports /opt/bb-reports/server"
+scp $SSH_OPTS "$SCRIPT_DIR/server-linux" "${REMOTE}:/tmp/server-linux"
 
-# ── Create .env if it doesn't exist ──────────────────────────────────────────
-if ! $SSH "sudo test -f /opt/bb-reports/.env"; then
-  echo ""
-  echo "[*] First deploy - setting up credentials."
-  read -rp    "    API_KEY (used by BrowserBleed --exfil-key and browser login): " BB_API_KEY
-  read -rp    "    ENCRYPTION_KEY (64-char hex, run: openssl rand -hex 32):      " BB_ENC_KEY
-  BASE_URL_DEFAULT="https://${DOMAIN}"
-  read -rp    "    BASE_URL [${BASE_URL_DEFAULT}]:                               " BB_BASE_URL
-  BB_BASE_URL="${BB_BASE_URL:-$BASE_URL_DEFAULT}"
-  TTL_DEFAULT="${REPORT_TTL:-24h}"
-  read -rp    "    REPORT_TTL [${TTL_DEFAULT}]:                                  " BB_TTL
-  BB_TTL="${BB_TTL:-$TTL_DEFAULT}"
+# ── Install and restart ───────────────────────────────────────────────────────
+echo "[*] Installing and restarting service..."
+# Re-push the key before the SSH session (SCP may have used the 60s window)
+aws ec2-instance-connect send-ssh-public-key \
+  --instance-id "$INSTANCE_ID" \
+  --instance-os-user "$OS_USER" \
+  --ssh-public-key "$(cat "$TEMP_PUB")" \
+  --region "${REGION:-us-east-1}" \
+  --output json > /dev/null
 
-  $SSH "sudo tee /opt/bb-reports/.env > /dev/null" << EOF
-API_KEY=${BB_API_KEY}
-ENCRYPTION_KEY=${BB_ENC_KEY}
-BASE_URL=${BB_BASE_URL}
-REPORT_TTL=${BB_TTL}
-EOF
-  $SSH "sudo chmod 600 /opt/bb-reports/.env && sudo chown bb-reports:bb-reports /opt/bb-reports/.env"
-  echo "[+] Credentials saved to /opt/bb-reports/.env on server."
-fi
+ssh $SSH_OPTS "$REMOTE" bash << 'ENDSSH'
+  sudo mv /tmp/server-linux /opt/bb-reports/server
+  sudo chmod +x /opt/bb-reports/server
+  sudo chown bb-reports:bb-reports /opt/bb-reports/server
+  sudo systemctl restart bb-reports
+  sudo systemctl status bb-reports --no-pager -l
+ENDSSH
 
-# ── Restart service ───────────────────────────────────────────────────────────
-echo "[*] Restarting bb-reports service..."
-$SSH "sudo systemctl restart bb-reports"
-sleep 2
-$SSH "sudo systemctl status bb-reports --no-pager -l"
+rm -f "$SCRIPT_DIR/server-linux"
 
 echo ""
 echo "[+] Deploy complete."
 echo "    Reports UI:  https://${DOMAIN}/"
 echo "    Upload URL:  https://${DOMAIN}/upload"
+echo "    Builds UI:   https://${DOMAIN}/payloads"
+echo ""
+echo "    To process build jobs: python build_agent.py (run on your Windows machine)"
