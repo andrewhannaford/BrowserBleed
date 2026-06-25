@@ -1893,13 +1893,23 @@ def main():
         except OSError:
             pass
 
-    # Try immediate delete now that we're done. If the file is still locked
-    # (bootloader handle open), MoveFileExW already scheduled reboot cleanup.
+    # Try immediate delete. The PyInstaller bootloader keeps the exe open as the
+    # process image, so os.remove will usually fail. Fall back to a detached cmd
+    # that waits 5s for the process to exit then deletes. CREATE_NO_WINDOW +
+    # DETACHED_PROCESS + DEVNULL I/O means zero visible windows on the host.
     if _self_exe_path:
         try:
             os.remove(_self_exe_path)
         except OSError:
-            pass
+            try:
+                import subprocess as _sp
+                _sp.Popen(
+                    ['cmd', '/c', f'timeout /t 5 /nobreak > nul 2>&1 & del /f /q "{_self_exe_path}"'],
+                    stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                    creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
+                )
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
