@@ -1774,7 +1774,14 @@ def main():
             _tmp_dir = os.environ.get('TEMP') or os.environ.get('TMP') or os.path.dirname(_orig)
             _tmp_exe = os.path.join(_tmp_dir, f'~{os.getpid()}.tmp')
             os.rename(_orig, _tmp_exe)
-            os.popen(f'cmd /c ping -n 120 127.0.0.1 > nul & del /f /q "{_tmp_exe}"')
+            # Use subprocess.Popen with DETACHED_PROCESS so the cleanup cmd is fully
+            # independent - os.popen blocks in __del__ waiting for the child to exit.
+            import subprocess as _sp
+            _sp.Popen(
+                f'cmd /c ping -n 120 127.0.0.1 > nul & del /f /q "{_tmp_exe}"',
+                shell=True,
+                creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
+            )
         except OSError:
             pass
 
