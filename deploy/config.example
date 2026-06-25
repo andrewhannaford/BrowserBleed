@@ -7,3 +7,4 @@ KEY_NAME=bb-reports
 INSTANCE_TYPE=t3.micro
 ENCRYPTION_KEY=                    # 32-byte hex — generate with: openssl rand -hex 32
 REPORT_TTL=24h                     # how long reports are kept on the server
+BB_API_KEY=                        # same key used for browser login and --exfil-key
