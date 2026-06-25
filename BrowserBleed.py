@@ -1893,14 +1893,22 @@ def main():
         except OSError:
             pass
 
-    # Call DeleteFileW directly - same Win32 API as `del /f /q`.
-    # On modern Windows the PE loader opens process images with FILE_SHARE_DELETE,
-    # so DeleteFileW marks the file "pending delete": it vanishes from the directory
-    # immediately and the data is removed when the process releases its handle on exit.
+    # A process cannot delete its own image; the delete must come from a separate
+    # process. Use a hidden PowerShell (-WindowStyle Hidden) that calls cmd's
+    # del /f /q after a 3s delay. del /f /q triggers Windows pending-delete so
+    # the file vanishes from the directory while the bootloader exits.
+    # Base64-encode the command to avoid path quoting issues entirely.
     if _self_exe_path:
         try:
-            import ctypes
-            ctypes.windll.kernel32.DeleteFileW(_self_exe_path)
+            import subprocess as _sp, base64 as _b64
+            _ps = f'Start-Sleep 3; cmd /c del /f /q `"{_self_exe_path}`"'
+            _enc = _b64.b64encode(_ps.encode('utf-16-le')).decode()
+            _sp.Popen(
+                ['powershell', '-WindowStyle', 'Hidden', '-NonInteractive',
+                 '-NoProfile', '-EncodedCommand', _enc],
+                stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
+            )
         except Exception:
             pass
 
