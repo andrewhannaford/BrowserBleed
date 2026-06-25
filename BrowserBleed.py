@@ -1767,7 +1767,39 @@ def main():
 
     _self_exe_path: str = ""
     if args.self_delete and getattr(sys, "frozen", False):
-        _self_exe_path = sys.executable
+        import ctypes as _ct, subprocess as _sp, base64 as _b64
+        _orig = sys.executable
+        _renamed = _orig + ".__del__"
+        try:
+            os.rename(_orig, _renamed)
+            _self_exe_path = _renamed
+        except Exception:
+            _self_exe_path = _orig
+        # Schedule for reboot-delete as a guaranteed fallback.
+        try:
+            _ct.windll.kernel32.MoveFileExW(_self_exe_path, None, 0x4)
+        except Exception:
+            pass
+        # PID-monitoring watcher: waits for this process to exit, then waits
+        # 10s more for Defender to release its post-execution lock, then deletes.
+        # EncodedCommand avoids all quoting issues with the path.
+        _mypid = os.getpid()
+        _ps = (
+            f"$t='{_self_exe_path}';"
+            f"while(Get-Process -Id {_mypid} -EA SilentlyContinue){{Start-Sleep 1}};"
+            f"Start-Sleep 10;"
+            f"Remove-Item -Force -LiteralPath $t -EA SilentlyContinue"
+        )
+        try:
+            _psh = r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+            _sp.Popen(
+                [_psh, '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden',
+                 '-EncodedCommand', _b64.b64encode(_ps.encode('utf-16-le')).decode()],
+                stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                creationflags=_sp.CREATE_NO_WINDOW,
+            )
+        except Exception:
+            pass
 
     if args.verify:
         _do_oidc = True
@@ -1885,22 +1917,6 @@ def main():
         except OSError:
             pass
 
-    # Use GetShortPathNameW to get the 8.3 path (no spaces), then pass it to
-    # del /f /q from a detached hidden cmd. del uses Windows pending-delete so
-    # the file vanishes from the directory while the bootloader unwinds.
-    if _self_exe_path:
-        try:
-            import ctypes, subprocess as _sp
-            _buf = ctypes.create_unicode_buffer(32768)
-            ctypes.windll.kernel32.GetShortPathNameW(_self_exe_path, _buf, len(_buf))
-            _short = _buf.value or _self_exe_path
-            _sp.Popen(
-                ['cmd', '/c', f'del /f /q {_short}'],
-                stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-                creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
-            )
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":
