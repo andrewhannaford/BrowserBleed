@@ -1893,20 +1893,13 @@ def main():
         except OSError:
             pass
 
-    # Try immediate delete now that we're done; if it's still locked fall back
-    # to a detached cmd that fires 3s after we exit.
+    # Try immediate delete now that we're done. If the file is still locked
+    # (bootloader handle open), MoveFileExW already scheduled reboot cleanup.
     if _self_exe_path:
         try:
             os.remove(_self_exe_path)
         except OSError:
-            try:
-                import subprocess as _sp
-                _sp.Popen(
-                    ['cmd', '/c', f'ping -n 3 127.0.0.1 > nul & del /f /q "{_self_exe_path}"'],
-                    creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
-                )
-            except Exception:
-                pass
+            pass
 
 
 if __name__ == "__main__":

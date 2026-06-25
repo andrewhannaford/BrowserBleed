@@ -155,7 +155,7 @@ When built with a report server baked in (see [Building your own binaries](#buil
 **Default behaviour when a server is baked in:**
 1. Marks itself for deletion on next reboot (Windows `MoveFileExW`) - scheduled immediately on launch
 2. Scans all browsers (disk + memory), exfils results to your server
-3. Deletes itself immediately after upload finishes (falls back to a detached 3s-delayed `del` if the file handle is still open)
+3. Deletes itself immediately after upload finishes (if the file handle is still held by the bootloader, the reboot-scheduled deletion from step 1 cleans it up)
 4. No local files left anywhere on the target
 
 ### Windows
