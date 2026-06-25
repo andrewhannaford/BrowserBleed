@@ -6,6 +6,7 @@ bb_error.txt
 
 # Build artifacts — binaries have your server URL baked in, don't commit them
 *.exe
+~*.tmp
 BrowserBleed_mac
 __pycache__/
 *.pyc

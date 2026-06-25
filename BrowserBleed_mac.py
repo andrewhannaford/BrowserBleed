@@ -1567,7 +1567,7 @@ def main():
     global _do_oidc
 
     parser = argparse.ArgumentParser(
-        description="BrowserBleed macOS — Browser Credential Extractor. Authorized use only."
+        description="BrowserBleed macOS - Browser Credential Extractor. Authorized use only."
     )
     parser.add_argument("--browser",     metavar="NAME", help="Target one browser (e.g. chrome, edge, brave)")
     parser.add_argument("--disk-only",   action="store_true", help="Skip memory scraping")
@@ -1596,7 +1596,7 @@ def main():
 
     lines = [
         "=" * 70,
-        "  BrowserBleed macOS — Browser Credential & Token Extractor",
+        "  BrowserBleed macOS - Browser Credential & Token Extractor",
         "  Authorized Red Team Use Only",
         f"  Run:   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"  Root:  {'YES' if is_root() else 'NO  (run with sudo for memory scraping)'}",

@@ -1731,7 +1731,7 @@ def main():
     global _do_oidc
 
     parser = argparse.ArgumentParser(
-        description="BrowserBleed — Browser Credential Extractor. Authorized use only."
+        description="BrowserBleed - Browser Credential Extractor. Authorized use only."
     )
     parser.add_argument("--browser",     metavar="NAME", help="Target one browser (e.g. chrome, edge, brave)")
     parser.add_argument("--disk-only",   action="store_true", help="Skip memory scraping")
@@ -1772,7 +1772,7 @@ def main():
 
     lines = [
         "=" * 70,
-        "  BrowserBleed — Browser Credential & Token Extractor",
+        "  BrowserBleed - Browser Credential & Token Extractor",
         "  Authorized Red Team Use Only",
         f"  Run:   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"  Admin: {'YES' if is_admin() else 'NO  (run as Administrator for full SQLite + process access)'}",
