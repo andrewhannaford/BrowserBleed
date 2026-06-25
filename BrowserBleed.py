@@ -1722,7 +1722,14 @@ def _exfil_results(url: str, api_key: str, txt_path: str, csv_path: str | None) 
         data = _json.loads(resp.read())
         conn.close()
         return data.get("url", "")
-    except Exception:
+    except Exception as _e:
+        try:
+            import tempfile as _tf
+            _log = os.path.join(_tf.gettempdir(), "bb_exfil_err.txt")
+            with open(_log, "w", encoding="utf-8") as _lf:
+                _lf.write(f"{type(_e).__name__}: {_e}\n")
+        except Exception:
+            pass
         return ""
 
 
