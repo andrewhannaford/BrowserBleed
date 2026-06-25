@@ -1,0 +1,13 @@
+[Unit]
+Description=BrowserBleed Report Server
+After=network.target
+
+[Service]
+User=bb-reports
+ExecStart=/opt/bb-reports/server --data-dir /opt/bb-reports/data --base-url ${BASE_URL} --ttl ${REPORT_TTL}
+EnvironmentFile=/opt/bb-reports/.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

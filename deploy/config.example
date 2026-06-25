@@ -1,0 +1,9 @@
+# Copy to deploy/config and fill in your values before running any deploy script.
+DOMAIN=reports.yourdomain.com
+ROOT_DOMAIN=yourdomain.com.        # trailing dot required for Route 53
+EMAIL=you@example.com              # used by certbot for TLS cert notifications
+REGION=us-east-1
+KEY_NAME=bb-reports
+INSTANCE_TYPE=t3.micro
+ENCRYPTION_KEY=                    # 32-byte hex — generate with: openssl rand -hex 32
+REPORT_TTL=24h                     # how long reports are kept on the server
