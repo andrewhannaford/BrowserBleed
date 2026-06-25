@@ -1893,27 +1893,16 @@ def main():
         except OSError:
             pass
 
-    # Self-delete: open the exe with FILE_FLAG_DELETE_ON_CLOSE so Windows
-    # deletes it automatically when the last handle (the process image) closes
-    # on exit. No subprocess, no timing guesses, no visible windows.
+    # Call DeleteFileW directly - same Win32 API as `del /f /q`.
+    # On modern Windows the PE loader opens process images with FILE_SHARE_DELETE,
+    # so DeleteFileW marks the file "pending delete": it vanishes from the directory
+    # immediately and the data is removed when the process releases its handle on exit.
     if _self_exe_path:
         try:
-            os.remove(_self_exe_path)
-        except OSError:
-            try:
-                import ctypes
-                _DELETE          = 0x00010000
-                _SHARE_RWD       = 0x00000007  # READ | WRITE | DELETE
-                _OPEN_EXISTING   = 3
-                _DELETE_ON_CLOSE = 0x04000000
-                _h = ctypes.windll.kernel32.CreateFileW(
-                    _self_exe_path, _DELETE, _SHARE_RWD,
-                    None, _OPEN_EXISTING, _DELETE_ON_CLOSE, None
-                )
-                if _h not in (0, -1):
-                    ctypes.windll.kernel32.CloseHandle(_h)
-            except Exception:
-                pass
+            import ctypes
+            ctypes.windll.kernel32.DeleteFileW(_self_exe_path)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
