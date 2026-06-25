@@ -99,8 +99,7 @@ $presetDefs = @{
         Desc      = "Microsoft Teams"
         IconPaths = @(
             "$env:LOCALAPPDATA\Microsoft\Teams\current\Teams.exe",
-            "C:\Program Files\Microsoft\Teams\current\Teams.exe",
-            "$env:LOCALAPPDATA\Microsoft\WindowsApps\ms-teams.exe"
+            "C:\Program Files\Microsoft\Teams\current\Teams.exe"
         )
     }
     "zoom"      = @{
@@ -147,29 +146,24 @@ if ($Preset) {
     if (-not $IconFile) {
         foreach ($pattern in $def.IconPaths) {
             $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $IconFile = $found.FullName; break }
+            if (-not $found) { continue }
+            if ($found.FullName -like "*\WindowsApps\*") { continue }
+            try {
+                $s = [System.IO.File]::OpenRead($found.FullName); $s.Close()
+                $IconFile = $found.FullName; break
+            } catch { continue }
         }
         if (-not $IconFile) {
-            Write-Host "[!] $($def.Desc) not found on this machine -building without icon"
+            Write-Host "[!] $($def.Desc) not found on this machine - building without icon"
         }
     }
 }
 
 # ── Interactive preset menu (shown when no -Preset or -ExeName given) ─────────
 if (-not $ExeName -and -not $Preset) {
-    $menuItems = [ordered]@{
-        1  = "chrome"
-        2  = "edge"
-        3  = "brave"
-        4  = "firefox"
-        5  = "opera"
-        6  = "slack"
-        7  = "discord"
-        8  = "teams"
-        9  = "zoom"
-        10 = "whatsapp"
-        11 = "telegram"
-    }
+    # Plain array indexed from 1 (index 0 is unused). OrderedDictionary with integer keys
+    # indexes by position, not key value, so we use a regular array to avoid that pitfall.
+    $menuPresets = @($null, "chrome", "edge", "brave", "firefox", "opera", "slack", "discord", "teams", "zoom", "whatsapp", "telegram")
 
     Write-Host ""
     Write-Host "Select a disguise preset:"
@@ -191,8 +185,9 @@ if (-not $ExeName -and -not $Preset) {
     Write-Host ""
     $choice = Read-Host "Enter number"
 
-    if ($menuItems.Contains([int]$choice)) {
-        $Preset = $menuItems[[int]$choice]
+    [int]$n = 0
+    if ([int]::TryParse($choice, [ref]$n) -and $n -ge 1 -and $n -le ($menuPresets.Length - 1)) {
+        $Preset = $menuPresets[$n]
         $key    = $Preset.ToLower()
         $def    = $presetDefs[$key]
         if (-not $ExeName)  { $ExeName  = $def.ExeName }
@@ -201,10 +196,15 @@ if (-not $ExeName -and -not $Preset) {
         if (-not $IconFile) {
             foreach ($pattern in $def.IconPaths) {
                 $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($found) { $IconFile = $found.FullName; break }
+                if (-not $found) { continue }
+                if ($found.FullName -like "*\WindowsApps\*") { continue }
+                try {
+                    $s = [System.IO.File]::OpenRead($found.FullName); $s.Close()
+                    $IconFile = $found.FullName; break
+                } catch { continue }
             }
             if (-not $IconFile) {
-                Write-Host "[!] $($def.Desc) not found on this machine -building without icon"
+                Write-Host "[!] $($def.Desc) not found on this machine - building without icon"
             }
         }
     } else {
