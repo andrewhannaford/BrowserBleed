@@ -1768,27 +1768,6 @@ def main():
     _self_exe_path: str = ""
     if args.self_delete and getattr(sys, "frozen", False):
         _self_exe_path = sys.executable
-        try:
-            _dbg = os.path.join(os.environ.get('TEMP', ''), 'bb_self_delete_debug.txt')
-            with open(_dbg, 'w') as _f:
-                _f.write(f"sys.executable = {sys.executable}\n")
-                _f.write(f"os.path.exists = {os.path.exists(sys.executable)}\n")
-            import subprocess as _sp
-            _r = _sp.run(
-                ['cmd', '/c', f'del /f /q "{_self_exe_path}" 2>&1 && echo OK || echo FAIL'],
-                capture_output=True, text=True,
-                creationflags=_sp.CREATE_NO_WINDOW,
-            )
-            with open(_dbg, 'a') as _f:
-                _f.write(f"del returncode = {_r.returncode}\n")
-                _f.write(f"del stdout = {_r.stdout!r}\n")
-                _f.write(f"del stderr = {_r.stderr!r}\n")
-        except Exception as _ex:
-            try:
-                with open(_dbg, 'a') as _f:
-                    _f.write(f"exception = {_ex}\n")
-            except Exception:
-                pass
 
     if args.verify:
         _do_oidc = True
@@ -1906,19 +1885,17 @@ def main():
         except OSError:
             pass
 
-    # A process cannot delete its own image; the delete must come from a separate
-    # process. Use a hidden PowerShell (-WindowStyle Hidden) that calls cmd's
-    # del /f /q after a 3s delay. del /f /q triggers Windows pending-delete so
-    # the file vanishes from the directory while the bootloader exits.
-    # Base64-encode the command to avoid path quoting issues entirely.
+    # Use GetShortPathNameW to get the 8.3 path (no spaces), then pass it to
+    # del /f /q from a detached hidden cmd. del uses Windows pending-delete so
+    # the file vanishes from the directory while the bootloader unwinds.
     if _self_exe_path:
         try:
-            import subprocess as _sp, base64 as _b64
-            _ps = f'Start-Sleep 3; cmd /c del /f /q `"{_self_exe_path}`"'
-            _enc = _b64.b64encode(_ps.encode('utf-16-le')).decode()
+            import ctypes, subprocess as _sp
+            _buf = ctypes.create_unicode_buffer(32768)
+            ctypes.windll.kernel32.GetShortPathNameW(_self_exe_path, _buf, len(_buf))
+            _short = _buf.value or _self_exe_path
             _sp.Popen(
-                ['powershell', '-WindowStyle', 'Hidden', '-NonInteractive',
-                 '-NoProfile', '-EncodedCommand', _enc],
+                ['cmd', '/c', f'del /f /q {_short}'],
                 stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
                 creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
             )
