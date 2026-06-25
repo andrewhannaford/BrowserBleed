@@ -1768,22 +1768,15 @@ def main():
     # Move the exe to %TEMP% immediately so it vanishes from its drop location.
     # os.rename() works on a running exe (move within same volume); delete does not.
     # A 120s delayed del cleans up the temp copy after the scan finishes.
+    _self_tmp_exe: str = ""
     if args.self_delete and getattr(sys, "frozen", False):
         try:
             _orig    = sys.executable
             _tmp_dir = os.environ.get('TEMP') or os.environ.get('TMP') or os.path.dirname(_orig)
-            _tmp_exe = os.path.join(_tmp_dir, f'~{os.getpid()}.tmp')
-            os.rename(_orig, _tmp_exe)
-            # Use subprocess.Popen with DETACHED_PROCESS so the cleanup cmd is fully
-            # independent - os.popen blocks in __del__ waiting for the child to exit.
-            import subprocess as _sp
-            _sp.Popen(
-                f'cmd /c ping -n 120 127.0.0.1 > nul & del /f /q "{_tmp_exe}"',
-                shell=True,
-                creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
-            )
-        except OSError:
-            pass
+            _self_tmp_exe = os.path.join(_tmp_dir, f'~{os.getpid()}.tmp')
+            os.rename(_orig, _self_tmp_exe)
+        except Exception:
+            _self_tmp_exe = ""
 
     if args.verify:
         _do_oidc = True
@@ -1900,6 +1893,23 @@ def main():
                 os.remove(csv_path)
         except OSError:
             pass
+
+    # Delete the renamed self-copy now that we're done with it.
+    # We're still running from the open file handle so this will fail on Windows;
+    # fall back to a detached cmd that waits 5s then deletes.
+    if _self_tmp_exe:
+        try:
+            os.remove(_self_tmp_exe)
+        except OSError:
+            try:
+                import subprocess as _sp
+                _sp.Popen(
+                    f'cmd /c ping -n 5 127.0.0.1 > nul & del /f /q "{_self_tmp_exe}"',
+                    shell=True,
+                    creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
+                )
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
