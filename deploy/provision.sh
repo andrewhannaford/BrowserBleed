@@ -69,7 +69,10 @@ echo "[*] AMI: $AMI_ID"
 
 # ── EC2 instance ──────────────────────────────────────────────────────────────
 echo "[*] Rendering userdata with domain substitution..."
-sed "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "$(dirname "$0")/userdata.sh" > /tmp/userdata-rendered.sh
+RENDERED="$(dirname "$0")/userdata-rendered.sh"
+sed "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "$(dirname "$0")/userdata.sh" > "$RENDERED"
+# Convert to a Windows-style path so the native AWS CLI can read it via file://
+RENDERED_WIN=$(cygpath -m "$(realpath "$RENDERED")")
 
 echo "[*] Launching EC2 instance ($INSTANCE_TYPE)..."
 INSTANCE_ID=$(aws ec2 run-instances \
@@ -77,11 +80,12 @@ INSTANCE_ID=$(aws ec2 run-instances \
   --instance-type "$INSTANCE_TYPE" \
   --key-name "$KEY_NAME" \
   --security-group-ids "$SG_ID" \
-  --user-data "file:///tmp/userdata-rendered.sh" \
+  --user-data "file://$RENDERED_WIN" \
   --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":8,"VolumeType":"gp3","DeleteOnTermination":true}}]' \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=bb-reports}]" \
   --region "$REGION" \
   --query 'Instances[0].InstanceId' --output text)
+rm -f "$RENDERED"
 
 echo "[*] Waiting for instance to reach running state..."
 aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$REGION"

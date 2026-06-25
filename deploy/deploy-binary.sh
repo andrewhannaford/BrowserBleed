@@ -12,7 +12,8 @@ source "$(dirname "$0")/config" 2>/dev/null || {
 source "$(dirname "$0")/.provision-state"
 
 KEY="$(dirname "$0")/${KEY_NAME}.pem"
-SSH="ssh -i $KEY -o StrictHostKeyChecking=no ec2-user@$PUBLIC_IP"
+# BatchMode=yes prevents SSH from consuming stdin (which breaks interactive read prompts below)
+SSH="ssh -i $KEY -o StrictHostKeyChecking=no -o BatchMode=yes ec2-user@$PUBLIC_IP"
 SCP="scp -i $KEY -o StrictHostKeyChecking=no"
 
 # ── Build Linux binary ────────────────────────────────────────────────────────

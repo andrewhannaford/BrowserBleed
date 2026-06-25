@@ -2,3 +2,5 @@
 .provision-state
 server-linux
 config
+userdata-rendered.sh
+nginx-rendered.conf
