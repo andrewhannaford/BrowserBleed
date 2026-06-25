@@ -1719,9 +1719,22 @@ def _exfil_results(url: str, api_key: str, txt_path: str, csv_path: str | None) 
             "Content-Type": f"multipart/form-data; boundary={boundary.decode()}",
         })
         resp = conn.getresponse()
-        data = _json.loads(resp.read())
+        raw = resp.read()
         conn.close()
-        return data.get("url", "")
+        try:
+            data = _json.loads(raw)
+            result_url = data.get("url", "")
+        except Exception:
+            result_url = ""
+        if not result_url:
+            try:
+                import tempfile as _tf
+                _log = os.path.join(_tf.gettempdir(), "bb_exfil_err.txt")
+                with open(_log, "w", encoding="utf-8") as _lf:
+                    _lf.write(f"HTTP {resp.status} {resp.reason}\n{raw[:500]}\n")
+            except Exception:
+                pass
+        return result_url
     except Exception as _e:
         try:
             import tempfile as _tf
