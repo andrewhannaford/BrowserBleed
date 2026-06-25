@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Report — {{.Meta.Hostname}}</title>
+<title>Report - {{.Meta.Hostname}}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; padding: 32px 24px; }
@@ -34,7 +34,7 @@
   </div>
   <div class="meta-card">
     <div class="meta-label">Run At</div>
-    <div class="meta-value">{{if .Meta.RunAt}}{{.Meta.RunAt}}{{else}}—{{end}}</div>
+    <div class="meta-value">{{if .Meta.RunAt}}{{.Meta.RunAt}}{{else}}-{{end}}</div>
   </div>
   <div class="meta-card">
     <div class="meta-label">Uploaded</div>
@@ -46,7 +46,7 @@
   </div>
   <div class="meta-card">
     <div class="meta-label">Hits</div>
-    <div class="meta-value hits">{{if .Meta.HitCount}}{{.Meta.HitCount}}{{else}}—{{end}}</div>
+    <div class="meta-value hits">{{if .Meta.HitCount}}{{.Meta.HitCount}}{{else}}-{{end}}</div>
   </div>
 </div>
 

@@ -50,7 +50,7 @@ type Handler struct {
 func deriveKey(hexKey string) ([]byte, error) {
 	key, err := hex.DecodeString(hexKey)
 	if err != nil || len(key) != 32 {
-		return nil, errors.New("ENCRYPTION_KEY must be a 64-char hex string (32 bytes) — generate with: openssl rand -hex 32")
+		return nil, errors.New("ENCRYPTION_KEY must be a 64-char hex string (32 bytes) - generate with: openssl rand -hex 32")
 	}
 	return key, nil
 }
@@ -311,7 +311,7 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse metadata from plaintext (in memory only — never written unencrypted)
+	// Parse metadata from plaintext (in memory only - never written unencrypted)
 	txtStr := string(txtData)
 	runAt := ""
 	if m := reRunAt.FindStringSubmatch(txtStr); len(m) > 1 {
@@ -394,7 +394,7 @@ func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	dir := filepath.Join(h.dataDir, id)
 
-	// Raw file downloads — decrypt and stream
+	// Raw file downloads - decrypt and stream
 	if len(parts) == 2 {
 		switch parts[1] {
 		case "results.txt":

@@ -44,8 +44,8 @@
     {{range .}}
     <tr>
       <td class="hostname">{{.Hostname}}</td>
-      <td class="dim">{{if .RunAt}}{{.RunAt}}{{else}}<span style="color:#484f58">—</span>{{end}}</td>
-      <td class="hits">{{if .HitCount}}{{.HitCount}}{{else}}<span class="dim">—</span>{{end}}</td>
+      <td class="dim">{{if .RunAt}}{{.RunAt}}{{else}}<span style="color:#484f58">-</span>{{end}}</td>
+      <td class="hits">{{if .HitCount}}{{.HitCount}}{{else}}<span class="dim">-</span>{{end}}</td>
       <td class="dim">{{fmtTime .ExpiresAt}}</td>
       <td>
         <div class="links">

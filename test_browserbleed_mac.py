@@ -1,9 +1,9 @@
 """
-BrowserBleed macOS — unit tests.
+BrowserBleed macOS - unit tests.
 
 Tests all pure-Python logic: crypto, regex patterns, deduplication, noise
 filtering, service identification, and context-based domain scanning.
-No macOS required — the Mach API is never called here.
+No macOS required - the Mach API is never called here.
 
 Run:
     python -m pytest test_browserbleed_mac.py -v
@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 # ── Import module under test ───────────────────────────────────────────────────
 # BrowserBleed_mac.py guards the CDLL load behind sys.platform == "darwin",
-# so it imports cleanly on any platform — no mocking needed.
+# so it imports cleanly on any platform - no mocking needed.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import BrowserBleed_mac as bb
 
@@ -195,7 +195,7 @@ class TestDeduplicate(unittest.TestCase):
             self._hit("7dc87a3d9c83415f",   "7dc87a3d9c83415f",  "0x1000"),
             self._hit("7dc87a3d9c83415f2d-", "7dc87a3d9c83415f2d", "0x2000"),
         ]
-        # These have different dedup keys — they stay separate (different session IDs)
+        # These have different dedup keys - they stay separate (different session IDs)
         result = bb.deduplicate(hits)
         self.assertEqual(len(result), 2)
 
@@ -232,7 +232,7 @@ class TestDecodeJwtClaims(unittest.TestCase):
         self.assertEqual(bb._decode_jwt_claims("only.twoparts"), {})
 
     def test_urlsafe_base64_padding(self):
-        # Payload length not a multiple of 4 — padding must be added
+        # Payload length not a multiple of 4 - padding must be added
         payload = {"k": "v" * 5}  # produces b64 that needs padding
         token   = _make_jwt(payload)
         claims  = bb._decode_jwt_claims(token)
@@ -261,7 +261,7 @@ class TestDomainMatches(unittest.TestCase):
         self.assertFalse(bb._domain_matches("github.com", "notgithub.com"))
 
     def test_prefix_frag_no_dot(self):
-        # "cognito-idp" has no dot — match as startswith
+        # "cognito-idp" has no dot - match as startswith
         self.assertTrue(bb._domain_matches("cognito-idp", "cognito-idp.us-east-1.amazonaws.com"))
 
     def test_prefix_frag_exact(self):
@@ -388,11 +388,11 @@ class TestIdentifyService(unittest.TestCase):
         self.assertIn("Ollama", result)
 
     def test_jwt_redirect_uri_unknown_domain_reported(self):
-        # Unknown domain in redirect_uri — should still report the host rather than "unknown issuer"
+        # Unknown domain in redirect_uri - should still report the host rather than "unknown issuer"
         token  = _make_jwt({"redirect_uri": "https://authkit.cline.bot/callback"})
         result = bb.identify_service("JWT token", token)
         self.assertIn("cline.bot", result)
-        self.assertNotEqual(result, "JWT — unknown issuer")
+        self.assertNotEqual(result, "JWT - unknown issuer")
 
     def test_context_fallback_session_id(self):
         ctx    = b'POST /api/auth/session HTTP/1.1\r\nHost: api.github.com'
@@ -426,7 +426,7 @@ class TestChromeEpoch(unittest.TestCase):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Crypto (AES-128-CBC / PBKDF2) — requires cryptography package
+# Crypto (AES-128-CBC / PBKDF2) - requires cryptography package
 # ══════════════════════════════════════════════════════════════════════════════
 @unittest.skipUnless(HAS_CRYPTO, "cryptography package not installed")
 class TestCrypto(unittest.TestCase):
@@ -501,13 +501,13 @@ class TestDecodeJwtHeader(unittest.TestCase):
     def test_kid_map_resolves_google_key_id(self):
         token = _make_jwt({"plaintext": "abc"}, header={"alg": "HS384", "kid": "key-1564028078"})
         result = bb.identify_service("JWT token", token)
-        self.assertEqual(result, "JWT — Google")
+        self.assertEqual(result, "JWT - Google")
 
     def test_kid_map_ignores_non_numeric_kid(self):
         # Only key-<digits> should match; arbitrary strings should not
         token = _make_jwt({"sub": "u1"}, header={"alg": "RS256", "kid": "some-arbitrary-kid"})
         result = bb.identify_service("JWT token", token)
-        self.assertNotEqual(result, "JWT — Google")
+        self.assertNotEqual(result, "JWT - Google")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

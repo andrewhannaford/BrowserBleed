@@ -191,7 +191,7 @@ if (-not $ExeName -and -not $Preset) {
     Write-Host ""
     $choice = Read-Host "Enter number"
 
-    if ($menuItems.ContainsKey([int]$choice)) {
+    if ($menuItems.Contains([int]$choice)) {
         $Preset = $menuItems[[int]$choice]
         $key    = $Preset.ToLower()
         $def    = $presetDefs[$key]

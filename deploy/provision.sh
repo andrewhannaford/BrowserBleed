@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# provision.sh — spins up the BrowserBleed report server on AWS
+# provision.sh - spins up the BrowserBleed report server on AWS
 # Run from Git Bash on Windows: bash deploy/provision.sh
 # Requires: aws cli (authenticated), deploy/config filled in
 
@@ -55,7 +55,7 @@ else
   echo "[*] Using existing security group: $SG_ID"
 fi
 
-# ── AMI — latest Amazon Linux 2023 ───────────────────────────────────────────
+# ── AMI - latest Amazon Linux 2023 ───────────────────────────────────────────
 echo "[*] Finding latest Amazon Linux 2023 AMI..."
 AMI_ID=$(aws ec2 describe-images \
   --owners amazon \

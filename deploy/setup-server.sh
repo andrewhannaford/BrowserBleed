@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-server.sh — SSHes into the EC2 and configures nginx + TLS + systemd
+# setup-server.sh - SSHes into the EC2 and configures nginx + TLS + systemd
 # Run after provision.sh: bash deploy/setup-server.sh
 
 set -euo pipefail

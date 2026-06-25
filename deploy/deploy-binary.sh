@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy-binary.sh — builds the Linux server binary and pushes it to the EC2.
+# deploy-binary.sh - builds the Linux server binary and pushes it to the EC2.
 # Run from the repo root: bash deploy/deploy-binary.sh
 
 set -euo pipefail
@@ -29,7 +29,7 @@ $SSH "sudo mv /tmp/server-linux /opt/bb-reports/server && sudo chmod +x /opt/bb-
 # ── Create .env if it doesn't exist ──────────────────────────────────────────
 if ! $SSH "sudo test -f /opt/bb-reports/.env"; then
   echo ""
-  echo "[*] First deploy — setting up credentials."
+  echo "[*] First deploy - setting up credentials."
   read -rp    "    API_KEY (used by BrowserBleed --exfil-key and browser login): " BB_API_KEY
   read -rp    "    ENCRYPTION_KEY (64-char hex, run: openssl rand -hex 32):      " BB_ENC_KEY
   BASE_URL_DEFAULT="https://${DOMAIN}"

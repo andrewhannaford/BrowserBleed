@@ -28,7 +28,7 @@ EXFIL_URL="${EXFIL_URL:-}"
 EXFIL_KEY="${EXFIL_KEY:-}"
 
 if [ -z "$EXFIL_URL" ] || [ -z "$EXFIL_KEY" ]; then
-    echo "[!] EXFIL_URL or EXFIL_KEY not set — add DOMAIN and BB_API_KEY to deploy/config"
+    echo "[!] EXFIL_URL or EXFIL_KEY not set - add DOMAIN and BB_API_KEY to deploy/config"
     exit 1
 fi
 
