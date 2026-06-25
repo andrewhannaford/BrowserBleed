@@ -1893,25 +1893,25 @@ def main():
         except OSError:
             pass
 
-    # Try immediate delete. The PyInstaller bootloader keeps the exe open as the
-    # process image so os.remove usually fails. Fall back to a hidden PowerShell
-    # process: -WindowStyle Hidden is enforced at the shell level (guaranteed
-    # invisible even when elevated), -LiteralPath handles spaces in the path.
+    # Self-delete: open the exe with FILE_FLAG_DELETE_ON_CLOSE so Windows
+    # deletes it automatically when the last handle (the process image) closes
+    # on exit. No subprocess, no timing guesses, no visible windows.
     if _self_exe_path:
         try:
             os.remove(_self_exe_path)
         except OSError:
             try:
-                import subprocess as _sp
-                _sp.Popen(
-                    [
-                        'powershell', '-WindowStyle', 'Hidden',
-                        '-NonInteractive', '-NoProfile', '-Command',
-                        f"Start-Sleep 8; Remove-Item -Force -LiteralPath '{_self_exe_path}' -ErrorAction SilentlyContinue",
-                    ],
-                    stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-                    creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NO_WINDOW,
+                import ctypes
+                _DELETE          = 0x00010000
+                _SHARE_RWD       = 0x00000007  # READ | WRITE | DELETE
+                _OPEN_EXISTING   = 3
+                _DELETE_ON_CLOSE = 0x04000000
+                _h = ctypes.windll.kernel32.CreateFileW(
+                    _self_exe_path, _DELETE, _SHARE_RWD,
+                    None, _OPEN_EXISTING, _DELETE_ON_CLOSE, None
                 )
+                if _h not in (0, -1):
+                    ctypes.windll.kernel32.CloseHandle(_h)
             except Exception:
                 pass
 
