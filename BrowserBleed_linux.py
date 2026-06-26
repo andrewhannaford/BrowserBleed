@@ -1752,13 +1752,6 @@ def main():
     # Firefox-family browsers (Firefox, LibreWolf, Waterfox, Tor Browser)
     ff_family = extract_all_firefox_family()
 
-    # Collect all unique PIDs across Firefox-family processes for memory scraping
-    ff_all_pids: set[int] = set()
-    for _, ff_procs, _, _ in ff_family:
-        for pn in ff_procs:
-            ff_all_pids.update(find_pids(pn))
-    ff_all_pids_list = list(ff_all_pids)
-
     for ff_name, ff_procs, ff_profiles_dir, ff_cookies in ff_family:
         ff_pids = list(set(p for pn in ff_procs for p in find_pids(pn)))
         ff_running = bool(ff_pids)
