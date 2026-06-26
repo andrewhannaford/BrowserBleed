@@ -168,13 +168,17 @@ function selectedRows() {
 function onRowCheck() {
   const rows = selectedRows();
   const n = rows.length;
-  document.getElementById('sel-count').textContent = n;
+  const selCount = document.getElementById('sel-count');
+  if (selCount) selCount.textContent = n;
   document.getElementById('bulk-bar').classList.toggle('visible', n > 0);
   rows.forEach(r => r.classList.add('selected'));
-  document.querySelectorAll('.row-cb:not(:checked)').forEach(cb => cb.closest('tr').classList.remove('selected'));
+  document.querySelectorAll('.row-cb:not(:checked)').forEach(cb => cb.closest('tr')?.classList.remove('selected'));
   const all = document.querySelectorAll('.row-cb');
-  document.getElementById('select-all').indeterminate = n > 0 && n < all.length;
-  document.getElementById('select-all').checked = n === all.length;
+  const sa = document.getElementById('select-all');
+  if (sa) {
+    sa.indeterminate = n > 0 && n < all.length;
+    sa.checked = all.length > 0 && n === all.length;
+  }
 }
 
 function toggleAll(cb) {
@@ -184,7 +188,8 @@ function toggleAll(cb) {
 
 function clearSelection() {
   document.querySelectorAll('.row-cb').forEach(r => r.checked = false);
-  document.getElementById('select-all').checked = false;
+  const sa = document.getElementById('select-all');
+  if (sa) sa.checked = false;
   onRowCheck();
 }
 
