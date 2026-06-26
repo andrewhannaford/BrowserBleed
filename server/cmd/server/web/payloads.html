@@ -37,9 +37,9 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .section-body{padding:20px}
 
 /* table */
-table{width:100%;border-collapse:collapse}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
 thead th{background:var(--surface);color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
-th.th-icon{width:48px}
+th.th-icon{width:52px}.th-size{width:90px}.th-time{width:175px}.th-act{width:110px}
 tbody td{padding:11px 16px;border-bottom:1px solid var(--border);vertical-align:middle}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover td{background:rgba(255,255,255,.02)}
@@ -146,7 +146,7 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
     <table>
       <thead><tr>
         <th class="th-icon"></th>
-        <th>File</th><th>Size</th><th>Modified</th><th></th>
+        <th>File</th><th class="th-size">Size</th><th class="th-time">Modified</th><th class="th-act"></th>
       </tr></thead>
       <tbody>
         {{range .Windows}}
@@ -174,6 +174,45 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
     {{end}}
   </div>
 
+  <!-- ── macOS payloads ── -->
+  <div class="section">
+    <div class="section-head">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" opacity=".5"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.3.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      <span class="section-title">macOS Payloads</span>
+      {{if .Mac}}<span class="section-count">{{len .Mac}}</span>{{end}}
+    </div>
+    {{if .Mac}}
+    <table>
+      <thead><tr>
+        <th class="th-icon"></th>
+        <th>File</th><th class="th-size">Size</th><th class="th-time">Modified</th><th class="th-act"></th>
+      </tr></thead>
+      <tbody>
+        {{range .Mac}}
+        <tr>
+          <td class="cell-icon"><div class="icon-slot" data-preset="{{.Preset}}"></div></td>
+          <td class="cell-name">{{.Name}}</td>
+          <td class="cell-meta">{{fmtSize .Size}}</td>
+          <td class="cell-meta">{{fmtTime .ModTime}}</td>
+          <td><div class="actions">
+            <a class="btn btn-primary" href="/payloads/{{.Name}}" download>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>Download
+            </a>
+            <form method="POST" action="/payloads/{{.Name}}/delete" style="margin:0" onsubmit="return confirm('Delete {{.Name}}?')">
+              <button class="btn btn-del" type="submit" title="Delete">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1.75a.25.25 0 0 1 .25-.25h2.5a.25.25 0 0 1 .25.25V3h-3V1.75zm4.5 0V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.748 1.748 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15z"/></svg>
+              </button>
+            </form>
+          </div></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">No macOS payloads yet — build one below or upload a Mach-O binary.</div>
+    {{end}}
+  </div>
+
   <!-- ── Linux payloads ── -->
   <div class="section">
     <div class="section-head">
@@ -185,7 +224,7 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
     <table>
       <thead><tr>
         <th class="th-icon"></th>
-        <th>File</th><th>Size</th><th>Modified</th><th></th>
+        <th>File</th><th class="th-size">Size</th><th class="th-time">Modified</th><th class="th-act"></th>
       </tr></thead>
       <tbody>
         {{range .Linux}}

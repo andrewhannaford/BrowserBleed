@@ -50,7 +50,29 @@ type PayloadMeta struct {
 
 type PayloadsData struct {
 	Windows []PayloadMeta
+	Mac     []PayloadMeta
 	Linux   []PayloadMeta
+}
+
+func detectPlatform(name, filePath string) string {
+	if strings.HasSuffix(strings.ToLower(name), ".exe") {
+		return "windows"
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "linux"
+	}
+	defer f.Close()
+	magic := make([]byte, 4)
+	if _, err := io.ReadFull(f, magic); err != nil {
+		return "linux"
+	}
+	// Mach-O: FE ED FA CE (32-bit), FE ED FA CF (64-bit), CA FE BA BE (fat)
+	if (magic[0] == 0xFE && magic[1] == 0xED && magic[2] == 0xFA && (magic[3] == 0xCE || magic[3] == 0xCF)) ||
+		(magic[0] == 0xCA && magic[1] == 0xFE && magic[2] == 0xBA && magic[3] == 0xBE) {
+		return "mac"
+	}
+	return "linux"
 }
 
 func detectPreset(name string) string {
@@ -679,14 +701,15 @@ func (h *Handler) handlePayloads(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			platform := "linux"
-			if strings.HasSuffix(strings.ToLower(e.Name()), ".exe") {
-				platform = "windows"
-			}
+			filePath := filepath.Join(h.payloadsDir, e.Name())
+			platform := detectPlatform(e.Name(), filePath)
 			pm := PayloadMeta{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime().UTC(), Preset: detectPreset(e.Name()), Platform: platform}
-			if platform == "windows" {
+			switch platform {
+			case "windows":
 				data.Windows = append(data.Windows, pm)
-			} else {
+			case "mac":
+				data.Mac = append(data.Mac, pm)
+			default:
 				data.Linux = append(data.Linux, pm)
 			}
 		}
