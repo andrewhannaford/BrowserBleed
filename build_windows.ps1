@@ -85,7 +85,7 @@ $presetDefs = @{
         )
     }
     "discord"   = @{
-        ExeName   = "Discord"
+        ExeName   = "discord"
         Company   = "Discord Inc."
         Desc      = "Discord"
         IconPaths = @(
@@ -103,7 +103,7 @@ $presetDefs = @{
         )
     }
     "zoom"      = @{
-        ExeName   = "Zoom"
+        ExeName   = "zoom"
         Company   = "Zoom Video Communications, Inc."
         Desc      = "Zoom"
         IconPaths = @(
@@ -113,7 +113,7 @@ $presetDefs = @{
         )
     }
     "whatsapp"  = @{
-        ExeName   = "WhatsApp"
+        ExeName   = "whatsapp"
         Company   = "WhatsApp LLC"
         Desc      = "WhatsApp"
         IconPaths = @(
@@ -121,7 +121,7 @@ $presetDefs = @{
         )
     }
     "telegram"  = @{
-        ExeName   = "Telegram"
+        ExeName   = "telegram"
         Company   = "Telegram FZ-LLC"
         Desc      = "Telegram Desktop"
         IconPaths = @(
@@ -184,11 +184,11 @@ if (-not $ExeName -and -not $Preset) {
     Write-Host ""
     Write-Host "  CHAT APPS"
     Write-Host "  [6]  Slack      - slack                    (Slack Technologies, Inc.)"
-    Write-Host "  [7]  Discord    - Discord                  (Discord Inc.)"
+    Write-Host "  [7]  Discord    - discord                  (Discord Inc.)"
     Write-Host "  [8]  Teams      - ms-teams                 (Microsoft Corporation)"
-    Write-Host "  [9]  Zoom       - Zoom                     (Zoom Video Communications)"
-    Write-Host "  [10] WhatsApp   - WhatsApp                 (WhatsApp LLC)"
-    Write-Host "  [11] Telegram   - Telegram                 (Telegram FZ-LLC)"
+    Write-Host "  [9]  Zoom       - zoom                     (Zoom Video Communications)"
+    Write-Host "  [10] WhatsApp   - whatsapp                 (WhatsApp LLC)"
+    Write-Host "  [11] Telegram   - telegram                 (Telegram FZ-LLC)"
     Write-Host ""
     $choice = Read-Host "Enter number"
 
