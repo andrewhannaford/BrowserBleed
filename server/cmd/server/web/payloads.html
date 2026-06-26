@@ -32,6 +32,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:24px;overflow:hidden}
 .section-head{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
 .section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
+.section-count{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface3);border:1px solid var(--border);border-radius:10px;padding:1px 7px;margin-left:4px}
 .section-body{padding:20px}
 
 /* table */
@@ -131,23 +132,23 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
 
   <div class="page-header">
     <h1 class="page-title">Payloads</h1>
-    {{if .}}<span class="page-count" id="payload-count">{{len .}} file{{if gt (len .) 1}}s{{end}}</span>{{end}}
   </div>
 
-  <!-- ── Built payloads table ── -->
+  <!-- ── Windows payloads ── -->
   <div class="section">
     <div class="section-head">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" opacity=".5"><path d="M2 1.75A.75.75 0 0 1 2.75 1h8.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 1.75zm0 5A.75.75 0 0 1 2.75 6h8.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 6.75zm0 5A.75.75 0 0 1 2.75 11h4.5a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 2 11.75z"/></svg>
-      <span class="section-title">Built Payloads</span>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" opacity=".5"><path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25V2.75zm1.75-.25a.25.25 0 0 0-.25.25v1.5h12.5V2.75a.25.25 0 0 0-.25-.25zm12.25 4H2v6.5c0 .138.112.25.25.25h11.5a.25.25 0 0 0 .25-.25V6.5z"/></svg>
+      <span class="section-title">Windows Payloads</span>
+      {{if .Windows}}<span class="section-count">{{len .Windows}}</span>{{end}}
     </div>
-    {{if .}}
+    {{if .Windows}}
     <table>
       <thead><tr>
         <th class="th-icon"></th>
         <th>File</th><th>Size</th><th>Modified</th><th></th>
       </tr></thead>
       <tbody>
-        {{range .}}
+        {{range .Windows}}
         <tr>
           <td class="cell-icon"><div class="icon-slot" data-preset="{{.Preset}}"></div></td>
           <td class="cell-name">{{.Name}}</td>
@@ -168,7 +169,46 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
       </tbody>
     </table>
     {{else}}
-    <div class="empty">No payloads yet — build one below and drop the exe here via Manual Upload.</div>
+    <div class="empty">No Windows payloads yet — build one below or upload an .exe.</div>
+    {{end}}
+  </div>
+
+  <!-- ── Linux payloads ── -->
+  <div class="section">
+    <div class="section-head">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" opacity=".5"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215z"/></svg>
+      <span class="section-title">Linux Payloads</span>
+      {{if .Linux}}<span class="section-count">{{len .Linux}}</span>{{end}}
+    </div>
+    {{if .Linux}}
+    <table>
+      <thead><tr>
+        <th class="th-icon"></th>
+        <th>File</th><th>Size</th><th>Modified</th><th></th>
+      </tr></thead>
+      <tbody>
+        {{range .Linux}}
+        <tr>
+          <td class="cell-icon"><div class="icon-slot" data-preset="{{.Preset}}"></div></td>
+          <td class="cell-name">{{.Name}}</td>
+          <td class="cell-meta">{{fmtSize .Size}}</td>
+          <td class="cell-meta">{{fmtTime .ModTime}}</td>
+          <td><div class="actions">
+            <a class="btn btn-primary" href="/payloads/{{.Name}}" download>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>Download
+            </a>
+            <form method="POST" action="/payloads/{{.Name}}/delete" style="margin:0" onsubmit="return confirm('Delete {{.Name}}?')">
+              <button class="btn btn-del" type="submit" title="Delete">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1.75a.25.25 0 0 1 .25-.25h2.5a.25.25 0 0 1 .25.25V3h-3V1.75zm4.5 0V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.748 1.748 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15z"/></svg>
+              </button>
+            </form>
+          </div></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">No Linux payloads yet — build one below or upload a binary.</div>
     {{end}}
   </div>
 

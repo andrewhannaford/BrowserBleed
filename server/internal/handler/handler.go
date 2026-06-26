@@ -41,10 +41,16 @@ var (
 )
 
 type PayloadMeta struct {
-	Name    string
-	Size    int64
-	ModTime time.Time
-	Preset  string
+	Name     string
+	Size     int64
+	ModTime  time.Time
+	Preset   string
+	Platform string
+}
+
+type PayloadsData struct {
+	Windows []PayloadMeta
+	Linux   []PayloadMeta
 }
 
 func detectPreset(name string) string {
@@ -664,7 +670,7 @@ func (h *Handler) handlePayloads(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		entries, _ := os.ReadDir(h.payloadsDir)
-		var files []PayloadMeta
+		var data PayloadsData
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
@@ -673,10 +679,19 @@ func (h *Handler) handlePayloads(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			files = append(files, PayloadMeta{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime().UTC(), Preset: detectPreset(e.Name())})
+			platform := "linux"
+			if strings.HasSuffix(strings.ToLower(e.Name()), ".exe") {
+				platform = "windows"
+			}
+			pm := PayloadMeta{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime().UTC(), Preset: detectPreset(e.Name()), Platform: platform}
+			if platform == "windows" {
+				data.Windows = append(data.Windows, pm)
+			} else {
+				data.Linux = append(data.Linux, pm)
+			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		h.payloadsTpl.Execute(w, files)
+		h.payloadsTpl.Execute(w, data)
 
 	case http.MethodPost:
 		if err := r.ParseMultipartForm(256 << 20); err != nil {
