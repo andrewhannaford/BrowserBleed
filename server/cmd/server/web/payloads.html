@@ -350,9 +350,30 @@ function showToast(msg) {
   }, 2000);
 }
 
+function guessPresetFromName(name) {
+  const n = name.toLowerCase();
+  if (n.includes('chrome'))                          return 'chrome';
+  if (n.includes('edge') || n.includes('msedge'))   return 'edge';
+  if (n.includes('brave'))                           return 'brave';
+  if (n.includes('firefox') || n.includes('plugin-container')) return 'firefox';
+  if (n.includes('opera'))                           return 'opera';
+  if (n.includes('slack'))                           return 'slack';
+  if (n.includes('discord'))                         return 'discord';
+  if (n.includes('teams') || n.includes('ms-teams')) return 'teams';
+  if (n.includes('zoom'))                            return 'zoom';
+  if (n.includes('whatsapp'))                        return 'whatsapp';
+  if (n.includes('telegram'))                        return 'telegram';
+  return '';
+}
+
 function injectIcons() {
   document.querySelectorAll('.icon-slot[data-preset]').forEach(el => {
-    const id = el.dataset.preset;
+    let id = el.dataset.preset;
+    if (!id || !ICONS[id]) {
+      const row = el.closest('tr');
+      const nameCell = row && row.querySelector('.cell-name');
+      if (nameCell) id = guessPresetFromName(nameCell.textContent.trim());
+    }
     el.innerHTML = ICONS[id]
       ? ICONS[id]
       : `<div class="icon-generic">${(id||'?')[0].toUpperCase()}</div>`;
