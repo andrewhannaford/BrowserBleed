@@ -8,12 +8,27 @@ bb_error.txt
 *.exe
 ~*.tmp
 BrowserBleed_mac
+BrowserBleed_linux
+google-chrome
+microsoft-edge
+brave-browser
+firefox
+opera
+slack
+discord
+teams
+zoom
+whatsapp-desktop
+telegram-desktop
 __pycache__/
 *.pyc
 *.pyo
 *.spec
 build/
 dist/
+
+# Build venv - created automatically by build_linux.sh
+.bb_build_env/
 
 # PyInstaller temp
 *.pkg
