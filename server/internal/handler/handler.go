@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
@@ -17,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,21 +32,35 @@ type ReportMeta struct {
 	HasCSV     bool      `json:"has_csv"`
 }
 
+type PayloadMeta struct {
+	Name       string
+	Size       int64
+	ModifiedAt time.Time
+}
+
 var (
-	reID    = regexp.MustCompile(`^[0-9a-f]{16}$`)
-	reRunAt = regexp.MustCompile(`Run:\s+(.+)`)
-	reHits  = regexp.MustCompile(`\[\+\] (\d+ unique hit\(s\)[^\n]*)`)
+	reID          = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	reRunAt       = regexp.MustCompile(`Run:\s+(.+)`)
+	reHits        = regexp.MustCompile(`\[\+\] (\d+ unique hit\(s\)[^\n]*)`)
+	rePayloadName = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 )
 
+func validPayloadName(name string) bool {
+	return rePayloadName.MatchString(name) && !strings.HasPrefix(name, ".")
+}
+
 type Handler struct {
-	apiKey    string
-	encKey    []byte
-	dataDir   string
-	baseURL   string
-	ttl       time.Duration
-	indexTpl  *template.Template
-	reportTpl *template.Template
-	loginTpl  *template.Template
+	apiKey      string
+	encKey      []byte
+	dataDir     string
+	baseURL     string
+	ttl         time.Duration
+	indexTpl    *template.Template
+	reportTpl   *template.Template
+	loginTpl    *template.Template
+	payloadsTpl *template.Template
+	payloadsDir string
+	mu          sync.Mutex
 }
 
 func deriveKey(hexKey string) ([]byte, error) {
@@ -97,7 +113,47 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 		"fmtTime": func(t time.Time) string {
 			return t.UTC().Format("2006-01-02 15:04 UTC")
 		},
+		"fmtSize": func(n int64) string {
+			switch {
+			case n < 1024:
+				return fmt.Sprintf("%d B", n)
+			case n < 1024*1024:
+				return fmt.Sprintf("%.1f KB", float64(n)/1024)
+			default:
+				return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
+			}
+		},
+		"guessPreset": func(name string) string {
+			n := strings.ToLower(name)
+			switch {
+			case strings.Contains(n, "chrome"):
+				return "chrome"
+			case strings.Contains(n, "edge") || strings.Contains(n, "msedge"):
+				return "edge"
+			case strings.Contains(n, "brave"):
+				return "brave"
+			case strings.Contains(n, "firefox") || strings.Contains(n, "plugin-container"):
+				return "firefox"
+			case strings.Contains(n, "opera"):
+				return "opera"
+			case strings.Contains(n, "slack"):
+				return "slack"
+			case strings.Contains(n, "discord"):
+				return "discord"
+			case strings.Contains(n, "teams"):
+				return "teams"
+			case strings.Contains(n, "zoom"):
+				return "zoom"
+			case strings.Contains(n, "whatsapp"):
+				return "whatsapp"
+			case strings.Contains(n, "telegram"):
+				return "telegram"
+			default:
+				return ""
+			}
+		},
 	}
+
 	indexTpl, err := template.New("index.html").Funcs(funcMap).ParseFS(webFS, "index.html")
 	if err != nil {
 		return nil, err
@@ -110,16 +166,27 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 	if err != nil {
 		return nil, err
 	}
+	payloadsTpl, err := template.New("payloads.html").Funcs(funcMap).ParseFS(webFS, "payloads.html")
+	if err != nil {
+		return nil, err
+	}
+
+	payloadsDir := filepath.Join(dataDir, "payloads")
+	if err := os.MkdirAll(payloadsDir, 0750); err != nil {
+		return nil, err
+	}
 
 	return &Handler{
-		apiKey:    apiKey,
-		encKey:    encKey,
-		dataDir:   dataDir,
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		ttl:       ttl,
-		indexTpl:  indexTpl,
-		reportTpl: reportTpl,
-		loginTpl:  loginTpl,
+		apiKey:      apiKey,
+		encKey:      encKey,
+		dataDir:     dataDir,
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		ttl:         ttl,
+		indexTpl:    indexTpl,
+		reportTpl:   reportTpl,
+		loginTpl:    loginTpl,
+		payloadsTpl: payloadsTpl,
+		payloadsDir: payloadsDir,
 	}, nil
 }
 
@@ -127,6 +194,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/upload", h.handleUpload)
 	mux.HandleFunc("/login", h.handleLogin)
 	mux.HandleFunc("/r/", h.handleReport)
+	mux.HandleFunc("/payloads/", h.handlePayload)
+	mux.HandleFunc("/payloads", h.handlePayloads)
 	mux.HandleFunc("/", h.handleIndex)
 }
 
@@ -452,4 +521,160 @@ func (h *Handler) serveDecrypted(w http.ResponseWriter, r *http.Request, encPath
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Write(plain)
+}
+
+// ── Payload handlers ───────────────────────────────────────────────────────────
+
+func (h *Handler) listPayloads() []PayloadMeta {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	entries, err := os.ReadDir(h.payloadsDir)
+	if err != nil {
+		return nil
+	}
+	var payloads []PayloadMeta
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !validPayloadName(name) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		payloads = append(payloads, PayloadMeta{
+			Name:       name,
+			Size:       info.Size(),
+			ModifiedAt: info.ModTime().UTC(),
+		})
+	}
+	sort.Slice(payloads, func(i, j int) bool {
+		return payloads[i].ModifiedAt.After(payloads[j].ModifiedAt)
+	})
+	return payloads
+}
+
+func (h *Handler) handlePayloads(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		payloads := h.listPayloads()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		h.payloadsTpl.Execute(w, payloads)
+	case http.MethodPost:
+		h.doPayloadUpload(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) doPayloadUpload(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(256 << 20); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	f, fh, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "missing file", http.StatusBadRequest)
+		return
+	}
+	defer f.Close()
+
+	// Use explicit name param if given, else fall back to upload filename
+	name := fh.Filename
+	if n := r.FormValue("name"); n != "" {
+		name = n
+	}
+	if !validPayloadName(name) {
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	outPath := filepath.Join(h.payloadsDir, name)
+
+	h.mu.Lock()
+	out, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	if err != nil {
+		h.mu.Unlock()
+		http.Error(w, "write error", http.StatusInternalServerError)
+		return
+	}
+	_, copyErr := io.Copy(out, f)
+	out.Close()
+	h.mu.Unlock()
+
+	if copyErr != nil {
+		http.Error(w, "write error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[payload] uploaded name=%s size=%d", name, fh.Size)
+
+	if !h.isAPIRequest(r) {
+		http.Redirect(w, r, "/payloads", http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"name": name, "status": "ok"})
+}
+
+func (h *Handler) handlePayload(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/payloads/")
+	parts := strings.SplitN(path, "/", 2)
+	name := parts[0]
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+
+	if !validPayloadName(name) {
+		http.NotFound(w, r)
+		return
+	}
+
+	filePath := filepath.Join(h.payloadsDir, name)
+
+	switch action {
+	case "":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		f, err := os.Open(filePath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer f.Close()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+		io.Copy(w, f)
+
+	case "delete":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h.mu.Lock()
+		err := os.Remove(filePath)
+		h.mu.Unlock()
+		if err != nil && !os.IsNotExist(err) {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[payload] deleted name=%s", name)
+		http.Redirect(w, r, "/payloads", http.StatusSeeOther)
+
+	default:
+		http.NotFound(w, r)
+	}
 }
