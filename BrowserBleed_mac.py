@@ -1684,24 +1684,23 @@ def main():
     lines.append("\n  -- [DIAG] Browser paths --")
     for bname, proc, bpath, _ in BROWSERS:
         exists  = os.path.isdir(bpath)
-        # find_pids or is_process_running - use whichever exists in the file
         pids    = find_pids(proc) if 'find_pids' in dir() else []
         running = bool(pids)
-        status  = ("INSTALLED" if exists else "not found") + (
-            "  RUNNING (PIDs: " + ",".join(map(str, pids)) + ")" if running else "")
-        lines.append(f"  {bname:<20} {status}")
+        lines.append(f"  {bname:<20} {'INSTALLED' if exists else 'NOT FOUND'}")
         if exists:
             lines.append(f"    path: {bpath}")
+        if running:
+            lines.append(f"    running: PIDs {','.join(map(str, pids))}")
 
     for ff_name, ff_proc, ff_paths in _FIREFOX_SPECS_MAC:
         ff_dir  = _resolve_ff_profiles_dir_mac(ff_paths)
         pids    = find_pids(ff_proc) if 'find_pids' in dir() else []
         running = bool(pids)
-        status  = ("INSTALLED" if ff_dir else "not found") + (
-            "  RUNNING (PIDs: " + ",".join(map(str, pids)) + ")" if running else "")
-        lines.append(f"  {ff_name:<20} {status}")
+        lines.append(f"  {ff_name:<20} {'INSTALLED' if ff_dir else 'NOT FOUND'}")
         if ff_dir:
             lines.append(f"    path: {ff_dir}")
+        if running:
+            lines.append(f"    running: PIDs {','.join(map(str, pids))}")
 
     targets = BROWSERS
     if args.browser:

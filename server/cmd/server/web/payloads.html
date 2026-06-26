@@ -108,6 +108,8 @@ input[type=file].upload-input{display:block;width:100%;background:var(--surface3
 input[type=file].upload-input:hover{border-color:var(--border-h)}
 input[type=file].upload-input::file-selector-button{background:var(--surface);color:var(--dim);border:1px solid var(--border);border-radius:4px;padding:3px 10px;margin-right:10px;cursor:pointer;font-size:12px;font-weight:500}
 .upload-hint{font-size:11px;color:var(--muted);margin-top:8px}
+.flag-cb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none;font-family:var(--mono)}
+.flag-cb input{accent-color:var(--accent);cursor:pointer}
 
 /* toast */
 .toast-rack{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:999;pointer-events:none}
@@ -209,14 +211,14 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
       </tbody>
     </table>
     {{else}}
-    <div class="empty">No macOS payloads yet — build one below or upload a Mach-O binary.</div>
+    <div class="empty">No macOS payloads yet — build one below or upload a macOS binary.</div>
     {{end}}
   </div>
 
   <!-- ── Linux payloads ── -->
   <div class="section">
     <div class="section-head">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" opacity=".5"><path d="M12 1C8.1 1 6 4 6 7c0 1.5.4 2.8 1.1 3.9-.5 1.4-.8 3.6.3 5.1.4.6 1.9.6 2.3-.1.4-.7.3-1.8.1-2.5.6.2 1.5.4 2.7.4 1.2 0 2.1-.2 2.7-.4-.2.7-.3 1.8.1 2.5.4.7 1.9.7 2.3.1 1.1-1.5.8-3.7.3-5.1C18.6 9.8 19 8.5 19 7c0-3-2.1-6-7-6zM9.5 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm5 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7.5 17c0 2 1.3 3.2 2.2 3.8V23a1 1 0 0 0 2 0v-2h.6v2a1 1 0 0 0 2 0v-2.2c.9-.6 2.2-1.8 2.2-3.8H7.5z"/></svg>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" opacity=".6"><path d="M12 1C9 1 7.5 3.5 7.5 6.5c0 1.2.3 2.2.9 3C6.5 11 5.5 13 5.5 15.5 5.5 19.1 8.4 22 12 22s6.5-2.9 6.5-6.5c0-2.5-1-4.5-2.9-6 .6-.8.9-1.8.9-3C16.5 3.5 15 1 12 1ZM8.8 5.5a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0ZM12.8 5.5a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0ZM9 15.5a3 4 0 1 0 6 0a3 4 0 1 0-6 0Z"/></svg>
       <span class="section-title">Linux Payloads</span>
       {{if .Linux}}<span class="section-count">{{len .Linux}}</span>{{end}}
     </div>
@@ -270,14 +272,6 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
             <label>Exe Name</label>
             <input type="text" id="f-exe" placeholder="chrome">
           </div>
-          <div class="field field-wide">
-            <label>Company Name</label>
-            <input type="text" id="f-co" placeholder="Google LLC">
-          </div>
-          <div class="field field-wide">
-            <label>File Description</label>
-            <input type="text" id="f-desc" placeholder="Google Chrome">
-          </div>
         </div>
         <div id="linux-fields" class="fields" style="display:none">
           <div class="field field-med">
@@ -312,6 +306,25 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
             </button>
           </div>
           <div class="cmd-code" id="cmd-output"></div>
+        </div>
+
+        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+          <div class="group-label" style="margin-bottom:10px">Target flags</div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px">
+            <label class="flag-cb"><input type="checkbox" id="f-mem-only" onchange="updateRunCommand()"> --memory-only</label>
+            <label class="flag-cb"><input type="checkbox" id="f-disk-only" onchange="updateRunCommand()"> --disk-only</label>
+            <label class="flag-cb"><input type="checkbox" id="f-verify" onchange="updateRunCommand()"> --verify</label>
+          </div>
+          <div class="cmd-wrap">
+            <div class="cmd-bar">
+              <span class="cmd-label">Run on target</span>
+              <button class="btn btn-green" onclick="copyRunCommand()">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"/></svg>
+                Copy
+              </button>
+            </div>
+            <div class="cmd-code" id="run-output"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -394,8 +407,6 @@ function selectPreset(p) {
   document.querySelectorAll('.preset-card').forEach(c => c.classList.toggle('selected', c.dataset.id === p.id));
   selectedPreset = p;
   document.getElementById('f-exe').value     = p.winExe;
-  document.getElementById('f-co').value      = p.company;
-  document.getElementById('f-desc').value    = p.desc;
   document.getElementById('f-bin').value     = p.linuxBin;
   document.getElementById('f-mac-bin').value = p.macBin;
   document.getElementById('config-panel').classList.add('visible');
@@ -428,13 +439,9 @@ function updateCommand() {
   const upload = document.getElementById('f-upload').checked;
 
   if (currentOS === 'win') {
-    const exe  = document.getElementById('f-exe').value.trim();
-    const co   = document.getElementById('f-co').value.trim();
-    const desc = document.getElementById('f-desc').value.trim();
+    const exe = document.getElementById('f-exe').value.trim();
     let parts = ['.\\build_windows.ps1', flag('-Preset', p.id)];
-    if (exe  && exe  !== p.winExe)   parts.push(flag('-ExeName',  exe));
-    if (co   && co   !== p.company)  parts.push(flag('-Company',  `"${co}"`));
-    if (desc && desc !== p.desc)     parts.push(flag('-FileDesc', `"${desc}"`));
+    if (exe && exe !== p.winExe) parts.push(flag('-ExeName', exe));
     if (upload) parts.push(`<span class="ps-flag">-Upload</span>`);
     document.getElementById('cmd-output').innerHTML = parts.join(' ');
   } else if (currentOS === 'mac') {
@@ -450,6 +457,35 @@ function updateCommand() {
     if (upload) parts.push(`<span class="sh-flag">--upload</span>`);
     document.getElementById('cmd-output').innerHTML = parts.join(' ');
   }
+  updateRunCommand();
+}
+
+function updateRunCommand() {
+  if (!selectedPreset) return;
+  const p = selectedPreset;
+  const flags = [];
+  if (document.getElementById('f-mem-only').checked)    flags.push('--memory-only');
+  if (document.getElementById('f-disk-only').checked)   flags.push('--disk-only');
+  if (document.getElementById('f-verify').checked)      flags.push('--verify');
+const flagStr = flags.length ? ' ' + flags.join(' ') : '';
+  let cmd;
+  if (currentOS === 'win') {
+    const exe = (document.getElementById('f-exe').value.trim() || p.winExe) + '.exe';
+    cmd = `.\\${exe}${flagStr}`;
+  } else if (currentOS === 'mac') {
+    const bin = document.getElementById('f-mac-bin').value.trim() || p.macBin;
+    cmd = `sudo ./${bin}${flagStr}`;
+  } else {
+    const bin = document.getElementById('f-bin').value.trim() || p.linuxBin;
+    cmd = `sudo ./${bin}${flagStr}`;
+  }
+  document.getElementById('run-output').textContent = cmd;
+}
+
+function copyRunCommand() {
+  const text = document.getElementById('run-output').textContent;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => showToast('Run command copied'));
 }
 
 function copyCommand() {
@@ -505,8 +541,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('chat-grid').append(...PRESETS.chat.map(buildCard));
   injectIcons();
 
-  ['f-exe','f-co','f-desc','f-bin','f-mac-bin'].forEach(id =>
-    document.getElementById(id).addEventListener('input', updateCommand)
+  ['f-exe','f-bin','f-mac-bin'].forEach(id =>
+    document.getElementById(id).addEventListener('input', () => { updateCommand(); updateRunCommand(); })
   );
 });
 </script>

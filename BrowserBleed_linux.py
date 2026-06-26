@@ -1703,10 +1703,11 @@ def main():
         pids     = []
         for n in _CHROMIUM_ALT_NAMES.get(proc, [proc]):
             pids.extend(find_pids(n))
-        status = ("INSTALLED" if exists else "not found") + ("  RUNNING (PIDs: " + ",".join(map(str, set(pids))) + ")" if running else "")
-        lines.append(f"  {bname:<20} {status}")
+        lines.append(f"  {bname:<20} {'INSTALLED' if exists else 'NOT FOUND'}")
         if exists:
             lines.append(f"    path: {bpath}")
+        if running:
+            lines.append(f"    running: PIDs {','.join(map(str, set(pids)))}")
 
     for ff_name, ff_procs, ff_paths in _FIREFOX_SPECS:
         ff_dir = _resolve_firefox_spec(ff_paths)
@@ -1715,11 +1716,11 @@ def main():
             ff_pids_diag.extend(find_pids(pn))
         ff_pids_diag = list(set(ff_pids_diag))
         ff_run_diag  = bool(ff_pids_diag)
-        status = ("INSTALLED" if ff_dir else "not found") + (
-            "  RUNNING (PIDs: " + ",".join(map(str, ff_pids_diag)) + ")" if ff_run_diag else "")
-        lines.append(f"  {ff_name:<20} {status}")
+        lines.append(f"  {ff_name:<20} {'INSTALLED' if ff_dir else 'NOT FOUND'}")
         if ff_dir:
             lines.append(f"    path: {ff_dir}")
+        if ff_run_diag:
+            lines.append(f"    running: PIDs {','.join(map(str, ff_pids_diag))}")
 
     targets = BROWSERS
     if args.browser:

