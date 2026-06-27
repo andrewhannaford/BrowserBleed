@@ -543,7 +543,9 @@ function setOS(os) {
   document.getElementById('mac-fields').style.display   = os === 'mac'   ? '' : 'none';
   document.getElementById('linux-fields').style.display = os === 'linux' ? '' : 'none';
   document.getElementById('cmd-label').textContent =
-    os === 'win' ? 'PowerShell — run from repo root' : 'Bash — run from repo root (requires sudo)';
+    os === 'win'   ? 'PowerShell — run from repo root' :
+    os === 'linux' ? 'Bash — run from repo root (requires sudo)' :
+                     'Bash — run from repo root';
   updateCommand();
 }
 

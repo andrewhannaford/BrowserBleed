@@ -100,18 +100,30 @@ func detectPlatform(name, filePath string) string {
 func detectPreset(name string) string {
 	lower := strings.ToLower(name)
 	switch {
-	case strings.HasPrefix(lower, "chrome"):   return "chrome"
-	case strings.HasPrefix(lower, "edge"):     return "edge"
-	case strings.HasPrefix(lower, "brave"):    return "brave"
-	case strings.HasPrefix(lower, "firefox"):  return "firefox"
-	case strings.HasPrefix(lower, "opera"):    return "opera"
-	case strings.HasPrefix(lower, "slack"):    return "slack"
-	case strings.HasPrefix(lower, "discord"):  return "discord"
-	case strings.HasPrefix(lower, "ms-teams"): return "teams"
-	case strings.HasPrefix(lower, "zoom"):     return "zoom"
-	case strings.HasPrefix(lower, "whatsapp"): return "whatsapp"
-	case strings.HasPrefix(lower, "telegram"): return "telegram"
-	default:                                   return ""
+	case strings.Contains(lower, "chrome"):
+		return "chrome"
+	case strings.Contains(lower, "edge"):
+		return "edge"
+	case strings.Contains(lower, "brave"):
+		return "brave"
+	case strings.Contains(lower, "firefox") || strings.Contains(lower, "plugin-container"):
+		return "firefox"
+	case strings.Contains(lower, "opera"):
+		return "opera"
+	case strings.Contains(lower, "slack"):
+		return "slack"
+	case strings.Contains(lower, "discord"):
+		return "discord"
+	case strings.Contains(lower, "teams"):
+		return "teams"
+	case strings.Contains(lower, "zoom"):
+		return "zoom"
+	case strings.Contains(lower, "whatsapp"):
+		return "whatsapp"
+	case strings.Contains(lower, "telegram"):
+		return "telegram"
+	default:
+		return ""
 	}
 }
 
