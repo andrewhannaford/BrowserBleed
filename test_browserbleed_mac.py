@@ -155,9 +155,12 @@ class TestDeduplicate(unittest.TestCase):
                 "address": addr, "pid": 1}
 
     def test_dedup_collapses_same_key(self):
+        # deduplicate() groups by label:value[:50].  Use values that share the same
+        # first 50 characters so they land in the same group.
+        prefix = "A" * 50
         hits = [
-            self._hit("abc123def456",    "abc123def", "0x1000"),
-            self._hit("abc123def456abc", "abc123def", "0x2000"),
+            self._hit(prefix,       None, "0x1000"),
+            self._hit(prefix + "X", None, "0x2000"),
         ]
         result = bb.deduplicate(hits)
         self.assertEqual(len(result), 1)
@@ -199,15 +202,17 @@ class TestDeduplicate(unittest.TestCase):
         result = bb.deduplicate(hits)
         self.assertEqual(len(result), 2)
 
-    def test_session_id_trailing_dash_collapses(self):
-        # Same base ID captured with and without trailing separator dash
+    def test_session_id_prefix_upgrade_to_longer(self):
+        # Pass 2 of dedup: if value A is a prefix of value B (and A ≥ 20 chars),
+        # B replaces A.  "7dc87a3d9c83415f83ff" is a prefix of "7dc87a3d9c83415f83ff-"
+        # so they collapse to 1 hit and the longer value wins.
         hits = [
-            self._hit("7dc87a3d9c83415f83ff", "7dc87a3d9c83415f83ff",  "0x1000"),
-            self._hit("7dc87a3d9c83415f83ff-","7dc87a3d9c83415f83ff",   "0x2000"),
+            self._hit("7dc87a3d9c83415f83ff",  None, "0x1000"),
+            self._hit("7dc87a3d9c83415f83ff-", None, "0x2000"),
         ]
         result = bb.deduplicate(hits)
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["value"], "7dc87a3d9c83415f83ff")
+        self.assertEqual(result[0]["value"], "7dc87a3d9c83415f83ff-")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -517,6 +522,10 @@ class TestOidcDiscover(unittest.TestCase):
 
     def setUp(self):
         bb._oidc_cache.clear()
+        bb._do_oidc = True  # _oidc_discover() returns None immediately when False
+
+    def tearDown(self):
+        bb._do_oidc = False
 
     def test_known_domain_from_oidc_response(self):
         fake_response = (200, {"issuer": "https://accounts.google.com"})
@@ -562,11 +571,13 @@ class TestOidcDiscover(unittest.TestCase):
 class TestPidSiteMap(unittest.TestCase):
 
     def test_parses_site_instance_site(self):
+        # _pid_site_map runs: ps -ww -A -o pid=,command=
+        # Output format is "PID cmd..." (PID is the first whitespace-separated token)
         ps_output = (
-            "andrewh  1234  0.0  0.1  ... Google Chrome Helper --type=renderer "
-            "--site-instance-site=https://github.com --something-else\n"
-            "andrewh  5678  0.0  0.1  ... Google Chrome Helper --type=renderer "
-            "--site-instance-site=https://accounts.google.com\n"
+            " 1234 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper"
+            " --type=renderer --site-instance-site=https://github.com --something-else\n"
+            " 5678 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper"
+            " --type=renderer --site-instance-site=https://accounts.google.com\n"
         )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value.stdout = ps_output
