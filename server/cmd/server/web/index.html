@@ -81,6 +81,17 @@
 
   /* ── Empty ── */
   .empty { padding: 64px 32px; text-align: center; color: var(--text-dim); font-size: 13px; }
+
+  @media (max-width: 640px) {
+    .shell { padding: 0 12px 48px; }
+    .topbar-brand { padding-right: 14px; font-size: 12px; }
+    .nav-link { padding: 8px 10px; font-size: 12px; }
+    .page-title { font-size: 18px; }
+    thead th:nth-child(3), thead th:nth-child(4), thead th:nth-child(5),
+    tbody td:nth-child(3), tbody td:nth-child(4), tbody td:nth-child(5) { display: none; }
+    .hide-mobile { display: none !important; }
+    .bulk-bar { flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
@@ -141,8 +152,8 @@
         <td>
           <div class="actions">
             <a class="btn" href="/r/{{.ID}}">View</a>
-            <a class="btn" href="/r/{{.ID}}/results.txt" download>txt</a>
-            {{if .HasCSV}}<a class="btn" href="/r/{{.ID}}/results.csv" download>csv</a>{{end}}
+            <a class="btn hide-mobile" href="/r/{{.ID}}/results.txt" download>txt</a>
+            {{if .HasCSV}}<a class="btn hide-mobile" href="/r/{{.ID}}/results.csv" download>csv</a>{{end}}
             <form method="POST" action="/r/{{.ID}}/delete" style="margin:0" onsubmit="return confirm('Delete this report?')">
               <button class="btn btn-del" type="submit" title="Delete">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1.75a.25.25 0 0 1 .25-.25h2.5a.25.25 0 0 1 .25.25V3h-3V1.75zm4.5 0V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.748 1.748 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15z"/></svg>

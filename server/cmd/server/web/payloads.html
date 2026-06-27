@@ -118,6 +118,26 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
 .toast.toast-out{animation:toast-out .25s ease forwards}
 @keyframes toast-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes toast-out{to{opacity:0;transform:translateY(8px)}}
+
+@media(max-width:640px){
+  .shell{padding:0 12px 64px}
+  .topbar-brand{padding-right:14px;font-size:12px}
+  .nav-link{padding:8px 10px;font-size:12px}
+  .page-title{font-size:18px}
+  .th-icon,.cell-icon,.th-size,.th-time,
+  table tbody td:nth-child(3),table tbody td:nth-child(4){display:none}
+  .th-act{width:auto}
+  .section-head{padding:12px 14px}
+  .section-body{padding:14px}
+  .fields{flex-direction:column}
+  .field-wide input,.field-med input{width:100%}
+  .cmd-header{flex-direction:column!important;align-items:flex-start!important;gap:10px}
+  .cmd-code{font-size:11px;padding:12px}
+  .preset-grid{grid-template-columns:repeat(auto-fill,minmax(88px,1fr))}
+  .toast-rack{right:12px;left:12px}
+  .upload-row{flex-direction:column;align-items:stretch}
+  .upload-row .btn-primary{width:100%}
+}
 </style>
 </head>
 <body>
@@ -286,7 +306,7 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
           </div>
         </div>
 
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="cmd-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div class="os-tabs" style="margin-bottom:0">
             <button class="os-tab active" id="tab-win" onclick="setOS('win')">Windows</button>
             <button class="os-tab" id="tab-mac" onclick="setOS('mac')">macOS</button>
