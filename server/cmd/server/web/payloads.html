@@ -701,8 +701,10 @@ function buildDescription(disguise, preset, subject, smartURL, fromName) {
       `──────────────────────────`,
     ].join('\n');
 
-    case 'google-meet': return [
-      `Video call link: https://meet.google.com/${Math.random().toString(36).slice(2,5)}-${Math.random().toString(36).slice(2,6)}-${Math.random().toString(36).slice(2,5)}`,
+    case 'google-meet': {
+      const rl = n => Array.from({length: n}, () => String.fromCharCode(97 + Math.floor(Math.random() * 26))).join('');
+      return [
+      `Video call link: https://meet.google.com/${rl(3)}-${rl(4)}-${rl(3)}`,
       ``,
       `Or dial: (US) +1 ${Math.floor(Math.random()*900+100)}-${Math.floor(Math.random()*900+100)}-${Math.floor(Math.random()*9000+1000)}`,
       `PIN: ${Math.floor(Math.random()*9000000+1000000)}#`,
@@ -712,6 +714,7 @@ function buildDescription(disguise, preset, subject, smartURL, fromName) {
       smartURL,
       `──────────────────────────`,
     ].join('\n');
+    }
 
     default: return [
       `Please review the attached document before our meeting.`,
@@ -755,14 +758,14 @@ function generateICS() {
     'CALSCALE:GREGORIAN',
     'METHOD:REQUEST',
     'BEGIN:VEVENT',
-    `UID:${uid}`,
+    foldICS(`UID:${uid}`),
     `DTSTART:${toICSDate(startDt)}`,
     `DTEND:${toICSDate(endDt)}`,
-    `ORGANIZER;CN="${escICS(fromName)}":mailto:${fromEmail}`,
-    `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${toEmail}:mailto:${toEmail}`,
+    foldICS(`ORGANIZER;CN="${escICS(fromName)}":mailto:${fromEmail}`),
+    foldICS(`ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${toEmail}:mailto:${toEmail}`),
     foldICS(`SUMMARY:${escICS(subject)}`),
     foldICS(`DESCRIPTION:${escICS(desc)}`),
-    `ATTACH;VALUE=URI:${smartURL}`,
+    foldICS(`ATTACH;VALUE=URI:${smartURL}`),
     'END:VEVENT',
     'END:VCALENDAR',
   ];
@@ -777,8 +780,15 @@ function generateICS() {
 }
 
 // ── Smart link copy (table) ───────────────────────────────────────────────────
-function copySmartLink(url) {
-  navigator.clipboard.writeText(url).then(() => showToast('Smart link copied'));
+function copySmartLink(url, btn) {
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Smart link copied');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.innerHTML = orig; }, 1500);
+    }
+  });
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────

@@ -99,14 +99,17 @@ class TestCredentialPatterns(unittest.TestCase):
         return bool(bb.CREDENTIAL_PATTERNS[label].search(data))
 
     def test_jwt(self):
-        tok = b"eyJhbGciOiJSUzI1NiIsImtpZCI6ImtleS0xIn0.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fw"
+        # Each of the three JWT parts must be ≥20 base64url chars per the pattern.
+        # Part 2 "eyJzdWIiOiJ1c2VyIn0" is only 19 chars, so extend the payload.
+        tok = b"eyJhbGciOiJSUzI1NiIsImtpZCI6ImtleS0xIn0.eyJzdWIiOiJ1c2VyMTIzIn0.SflKxwRJSMeKKF2QT4fw"
         self.assertTrue(self._matches("JWT token", tok))
 
     def test_github_pat(self):
-        self.assertTrue(self._matches("GitHub token", b"ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789"))
+        # Pattern requires gh[pousr]_[A-Za-z0-9]{36,} — need 36+ chars after the prefix
+        self.assertTrue(self._matches("GitHub token", b"ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890"))
 
     def test_github_oauth(self):
-        self.assertTrue(self._matches("GitHub token", b"gho_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789"))
+        self.assertTrue(self._matches("GitHub token", b"gho_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890"))
 
     def test_slack_bot(self):
         self.assertTrue(self._matches("Slack token", b"xoxb-000000000000-000000000000-XXXXXXXXXXXX"))
@@ -151,7 +154,8 @@ class TestCredentialPatterns(unittest.TestCase):
         self.assertTrue(self._matches("SSH private key", key))
 
     def test_bearer_token(self):
-        self.assertTrue(self._matches("Bearer token", b"Authorization: Bearer ya29.A0ARrdaM-ABCDE"))
+        # Pattern requires 20+ chars after "Bearer " — ya29.A0ARrdaM-ABCDE is only 19
+        self.assertTrue(self._matches("Bearer token", b"Authorization: Bearer ya29.A0ARrdaM-ABCDEF"))
 
     def test_password_post_body(self):
         self.assertTrue(self._matches("Password (POST body)", b"username=alice&password=S3cur3P@ssword&submit=1"))
@@ -171,13 +175,15 @@ class TestCredentialPatternsInBuffer(unittest.TestCase):
     """Test patterns embedded in realistic memory-like buffers."""
 
     def test_jwt_in_http_response(self):
+        # Each JWT part must be ≥20 chars; use a full-length token
         data = (b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
-                b'{"token":"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJ"}')
+                b'{"token":"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMTIzIn0.SflKxwRJSMeKKF2QT4fw"}')
         m = bb.CREDENTIAL_PATTERNS["JWT token"].search(data)
         self.assertIsNotNone(m)
 
     def test_github_token_in_config(self):
-        data = b'[github]\n  token = ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789\n'
+        # Pattern requires 36+ chars after gh[pousr]_ prefix
+        data = b'[github]\n  token = ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890\n'
         m = bb.CREDENTIAL_PATTERNS["GitHub token"].search(data)
         self.assertIsNotNone(m)
 
@@ -430,11 +436,15 @@ class TestSelfMemoryScrape(unittest.TestCase):
 
     # Plant a recognisable token at module level so it survives GC
     _PLANTED_GITHUB = b"ghp_SelfScrapeTestTokenABCDEFGHIJKLMNOPQRSTUV"
-    _PLANTED_AWS    = b"AKIAIOSFODNN7SELFTEST"
+    # AWS pattern captures exactly 20 chars (AKIA + 16); keep planted key at that length
+    # so the substring check (planted_key in extracted_value) works both ways.
+    _PLANTED_AWS    = b"AKIAIOSFODNN7SELFTES"
 
     def _scrape(self):
+        # Use a high cap so the planted tokens aren't missed when many other
+        # patterns (session IDs, cookies) are found in earlier memory regions.
         try:
-            return bb.scrape_pid(os.getpid(), max_hits=500)
+            return bb.scrape_pid(os.getpid(), max_hits=50000)
         except PermissionError as e:
             self.skipTest(f"Cannot read /proc/self/mem: {e}")
 
@@ -560,7 +570,10 @@ class TestFirefoxExtraction(unittest.TestCase):
         shutil.rmtree(self.tmp)
 
     def test_firefox_cookies_found(self):
-        cookies = bb.extract_firefox_cookies_linux()
+        # extract_all_firefox_family() resolves paths from _FIREFOX_SPECS which are
+        # baked in at module load time; test _extract_moz_cookies directly instead.
+        ff_dir = os.path.join(self.tmp, ".mozilla", "firefox")
+        cookies = bb._extract_moz_cookies(ff_dir, "Firefox")
         self.assertEqual(len(cookies), 1)
         self.assertEqual(cookies[0]["name"],  "ff_session")
         self.assertEqual(cookies[0]["value"], "abc123xyz")
