@@ -887,7 +887,16 @@ func (h *Handler) handleSmartDeliver(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Try the canonical filename first; fall back to scanning payloadsDir for
+	// any uploaded file that matches this preset+OS combination.
 	filePath := filepath.Join(h.payloadsDir, storedName)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if found := h.findPayload(preset, targetOS); found != "" {
+			storedName = found
+			filePath = filepath.Join(h.payloadsDir, storedName)
+		}
+	}
+
 	f, err := os.Open(filePath)
 	if err != nil {
 		http.NotFound(w, r)
@@ -1967,4 +1976,38 @@ func sendViaMicrosoft(tok *OAuthToken, mimeMsg []byte) error {
 		return fmt.Errorf("graph API %d: %s", resp.StatusCode, b)
 	}
 	return nil
+}
+
+// findPayload scans payloadsDir for an uploaded file matching the given preset and OS.
+// For macOS, any Mach-O binary qualifies because the Mac build serves all presets.
+// For Windows/Linux, the file must match both platform and preset.
+func (h *Handler) findPayload(preset, targetOS string) string {
+	entries, err := os.ReadDir(h.payloadsDir)
+	if err != nil {
+		return ""
+	}
+	targetPlatform := map[string]string{
+		"windows": "windows",
+		"macos":   "mac",
+		"linux":   "linux",
+	}[targetOS]
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		path := filepath.Join(h.payloadsDir, name)
+		if detectPlatform(name, path) != targetPlatform {
+			continue
+		}
+		// Mac binary is generic — it serves all presets.
+		if targetOS == "macos" {
+			return name
+		}
+		if detectPreset(name) == preset {
+			return name
+		}
+	}
+	return ""
 }
