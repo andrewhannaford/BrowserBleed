@@ -150,18 +150,22 @@ func detectOS(ua string) string {
 }
 
 type Handler struct {
-	apiKey      string
-	encKey      []byte
-	dataDir     string
-	payloadsDir string
-	buildsDir   string
-	baseURL     string
-	ttl         time.Duration
-	indexTpl    *template.Template
-	reportTpl   *template.Template
-	loginTpl    *template.Template
-	payloadsTpl *template.Template
-	guideTpl    *template.Template
+	apiKey              string
+	encKey              []byte
+	dataDir             string
+	payloadsDir         string
+	buildsDir           string
+	baseURL             string
+	ttl                 time.Duration
+	indexTpl            *template.Template
+	reportTpl           *template.Template
+	loginTpl            *template.Template
+	payloadsTpl         *template.Template
+	guideIndexTpl       *template.Template
+	guideStartTpl       *template.Template
+	guideBuildTpl       *template.Template
+	guideDeliveryTpl    *template.Template
+	guideSessionTestTpl *template.Template
 }
 
 func deriveKey(hexKey string) ([]byte, error) {
@@ -249,7 +253,23 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 	if err != nil {
 		return nil, err
 	}
-	guideTpl, err := template.New("guide.html").Funcs(funcMap).ParseFS(webFS, "guide.html")
+	guideIndexTpl, err := template.New("guide_index.html").Funcs(funcMap).ParseFS(webFS, "guide_index.html")
+	if err != nil {
+		return nil, err
+	}
+	guideStartTpl, err := template.New("guide_start.html").Funcs(funcMap).ParseFS(webFS, "guide_start.html")
+	if err != nil {
+		return nil, err
+	}
+	guideBuildTpl, err := template.New("guide_build.html").Funcs(funcMap).ParseFS(webFS, "guide_build.html")
+	if err != nil {
+		return nil, err
+	}
+	guideDeliveryTpl, err := template.New("guide_delivery.html").Funcs(funcMap).ParseFS(webFS, "guide_delivery.html")
+	if err != nil {
+		return nil, err
+	}
+	guideSessionTestTpl, err := template.New("guide.html").Funcs(funcMap).ParseFS(webFS, "guide.html")
 	if err != nil {
 		return nil, err
 	}
@@ -264,18 +284,22 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 	}
 
 	return &Handler{
-		apiKey:      apiKey,
-		encKey:      encKey,
-		dataDir:     dataDir,
-		payloadsDir: payloadsDir,
-		buildsDir:   buildsDir,
-		baseURL:     strings.TrimRight(baseURL, "/"),
-		ttl:         ttl,
-		indexTpl:    indexTpl,
-		reportTpl:   reportTpl,
-		loginTpl:    loginTpl,
-		payloadsTpl: payloadsTpl,
-		guideTpl:    guideTpl,
+		apiKey:              apiKey,
+		encKey:              encKey,
+		dataDir:             dataDir,
+		payloadsDir:         payloadsDir,
+		buildsDir:           buildsDir,
+		baseURL:             strings.TrimRight(baseURL, "/"),
+		ttl:                 ttl,
+		indexTpl:            indexTpl,
+		reportTpl:           reportTpl,
+		loginTpl:            loginTpl,
+		payloadsTpl:         payloadsTpl,
+		guideIndexTpl:       guideIndexTpl,
+		guideStartTpl:       guideStartTpl,
+		guideBuildTpl:       guideBuildTpl,
+		guideDeliveryTpl:    guideDeliveryTpl,
+		guideSessionTestTpl: guideSessionTestTpl,
 	}, nil
 }
 
@@ -294,6 +318,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/invite/send", h.handleInviteSend)
 	mux.HandleFunc("/auth/", h.handleAuth)
 	mux.HandleFunc("/guide", h.handleGuide)
+	mux.HandleFunc("/guide/", h.handleGuide)
 	mux.HandleFunc("/p/", h.handleSmartDeliver)
 	mux.HandleFunc("/", h.handleIndex)
 }
@@ -563,8 +588,22 @@ func (h *Handler) handleGuide(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAuth(w, r) {
 		return
 	}
+	sub := strings.Trim(strings.TrimPrefix(r.URL.Path, "/guide"), "/")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.guideTpl.Execute(w, nil)
+	switch sub {
+	case "", "index":
+		h.guideIndexTpl.Execute(w, nil)
+	case "start":
+		h.guideStartTpl.Execute(w, nil)
+	case "build":
+		h.guideBuildTpl.Execute(w, nil)
+	case "delivery":
+		h.guideDeliveryTpl.Execute(w, nil)
+	case "sessiontest":
+		h.guideSessionTestTpl.Execute(w, nil)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
@@ -586,7 +625,7 @@ func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
 		case "results.txt":
 			h.serveDecrypted(w, r, filepath.Join(dir, "results.txt.enc"), "text/plain; charset=utf-8", "results.txt")
 		case "results.csv":
-			h.serveDecrypted(w, r, filepath.Join(dir, "results.csv.enc"), "text/csv; charset=utf-8", "results.csv")
+			h.serveDecrypted(w, r, filepath.Join(dir, "results.csv.enc"), "text/csv; charset=utf-8", "bb_results.csv")
 		case "delete":
 			h.handleReportDelete(w, r, id)
 		default:

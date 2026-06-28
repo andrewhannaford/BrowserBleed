@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrowserBleed — Getting Started</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzBhMGMxMCIvPjxwYXRoIGQ9Ik0xNiA2QzE2IDYgOCAxNiA4IDIxYTggOCAwIDAgMCAxNiAwYzAtNS04LTE1LTgtMTV6IiBmaWxsPSIjZjg1MTQ5Ii8+PC9zdmc+">
+<style>
+:root{
+  --bg:#0a0c10;--surface:#10141a;--surface2:#13181f;--surface3:#0d1117;
+  --border:#1e2530;--border-h:#2d3748;
+  --text:#cdd5e0;--dim:#5a6478;--muted:#3d4758;
+  --accent:#4f8ef7;--green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --radius:8px;
+  --mono:"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:14px;min-height:100vh}
+.shell{max-width:900px;margin:0 auto;padding:0 24px 80px}
+.topbar{display:flex;align-items:center;border-bottom:1px solid var(--border);margin-bottom:40px;padding-top:20px}
+.topbar-brand{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding-right:24px;border-right:1px solid var(--border);margin-right:4px;white-space:nowrap}
+.nav-link{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:500;color:var(--dim);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
+.nav-link:hover{color:var(--text)}.nav-link.active{color:var(--accent);border-bottom-color:var(--accent)}
+.nav-icon{width:14px;height:14px;opacity:.7}
+.guide-subnav{display:flex;gap:2px;margin-bottom:28px;padding:4px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);width:fit-content}
+.guide-tab{padding:5px 14px;border-radius:5px;font-size:12px;font-weight:500;color:var(--dim);text-decoration:none;transition:color .12s,background .12s;white-space:nowrap}
+.guide-tab:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.guide-tab.active{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.page-title{font-size:26px;font-weight:600;margin-bottom:6px}
+.page-sub{font-size:14px;color:var(--dim);margin-bottom:36px}
+h2{font-size:16px;font-weight:700;color:var(--text);margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:24px 0 10px}
+p{font-size:14px;color:var(--text);line-height:1.65;margin-bottom:12px}
+p:last-child{margin-bottom:0}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+pre{background:var(--surface3);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;font-family:var(--mono);font-size:13px;color:var(--text);line-height:1.6;overflow-x:auto;margin-bottom:16px}
+pre code{background:none;border:none;padding:0;font-size:13px}
+.callout{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 var(--radius) var(--radius) 0;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--dim);line-height:1.6}
+.callout strong{color:var(--text)}
+.step-list{counter-reset:steps;list-style:none;margin-bottom:16px}
+.step-list li{counter-increment:steps;display:flex;gap:16px;margin-bottom:20px;align-items:flex-start}
+.step-list li::before{content:counter(steps);display:flex;align-items:center;justify-content:center;min-width:26px;height:26px;border-radius:50%;background:rgba(79,142,247,.15);border:1px solid rgba(79,142,247,.35);color:var(--accent);font-size:12px;font-weight:700;flex-shrink:0;margin-top:1px}
+.step-body{flex:1}
+.step-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px}
+.step-desc{font-size:13px;color:var(--dim);line-height:1.55}
+.prereq-list{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.prereq-list li{display:flex;gap:10px;align-items:baseline;font-size:13px}
+.prereq-list li::before{content:"·";color:var(--accent);font-size:18px;line-height:1;flex-shrink:0}
+@media(max-width:640px){
+  .shell{padding:0 12px 64px}
+  .topbar-brand{padding-right:14px;font-size:12px}
+  .nav-link{padding:8px 10px;font-size:12px}
+  .page-title{font-size:20px}
+  pre{font-size:11px;padding:12px}
+  .guide-subnav{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <span class="topbar-brand">BrowserBleed</span>
+    <a href="/" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 4h12v2H2V6zm0 4h8v2H2v-2z"/></svg>Reports
+    </a>
+    <a href="/payloads" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>Payloads
+    </a>
+    <a href="/guide" class="nav-link active">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.744 3.744 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.75 3.28v7.205c.46-.302.979-.44 1.5-.44h3.75V2.5h-3.495a2.25 2.25 0 0 0-1.755.78ZM1.5 2.5V12h3.758c.52 0 1.039.138 1.499.44V5.78A2.25 2.25 0 0 0 5.003 5H1.5Z"/></svg>
+      Guide
+    </a>
+  </div>
+
+  <div class="guide-subnav">
+    <a href="/guide" class="guide-tab">Overview</a>
+    <a href="/guide/start" class="guide-tab active">Getting Started</a>
+    <a href="/guide/build" class="guide-tab">Build</a>
+    <a href="/guide/delivery" class="guide-tab">Delivery</a>
+    <a href="/guide/sessiontest" class="guide-tab">Session Test</a>
+  </div>
+
+  <h1 class="page-title">Getting Started</h1>
+  <p class="page-sub">Set up BrowserBleed and run your first engagement end to end.</p>
+
+  <div class="callout">
+    <strong>Authorized use only.</strong> BrowserBleed is a red team tool. Only deploy against systems and accounts you are explicitly authorized to test.
+  </div>
+
+  <!-- ── Prerequisites ── -->
+  <h2>Prerequisites</h2>
+
+  <h3>Required</h3>
+  <ul class="prereq-list">
+    <li><strong>Python 3.10+</strong> — for the payload source and <code>sessiontest.py</code>. Check with <code>python3 --version</code>.</li>
+    <li><strong>AWS CLI with SSO</strong> — for deploying the server. Configured in <code>deploy/config</code> and <code>~/.aws/config</code>.</li>
+    <li><strong>Go 1.21+</strong> — to cross-compile the report server binary. Only needed if building the server from source.</li>
+  </ul>
+
+  <h3>For Windows payload builds</h3>
+  <ul class="prereq-list">
+    <li>PowerShell 5+ (built into Windows)</li>
+    <li>The build script installs PyInstaller automatically into a virtualenv — no manual setup needed</li>
+  </ul>
+
+  <h3>For macOS / Linux builds</h3>
+  <ul class="prereq-list">
+    <li>Bash and Python 3 (usually pre-installed)</li>
+    <li>Linux builds require <code>sudo</code> (PyInstaller needs root for some bootloader steps)</li>
+  </ul>
+
+  <h3>Optional</h3>
+  <ul class="prereq-list">
+    <li><strong>Playwright</strong> — for <code>sessiontest.py --browser</code> mode: <code>pip install playwright &amp;&amp; playwright install chromium</code></li>
+  </ul>
+
+  <!-- ── Workflow ── -->
+  <h2>End-to-end workflow</h2>
+
+  <ol class="step-list">
+    <li>
+      <div class="step-body">
+        <div class="step-title">Deploy the report server</div>
+        <div class="step-desc">The Go report server receives exfil data and serves the web UI. It runs on your EC2 instance behind nginx + HTTPS.</div>
+        <pre style="margin-top:10px"><code># Log in to AWS SSO (only needed when session is expired)
+aws sso login
+
+# Cross-compile and push to EC2
+bash deploy/deploy-binary.sh</code></pre>
+        <div class="step-desc">The deploy script pushes a 60-second temp SSH key via EC2 Instance Connect — no PEM file needed.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Build a payload</div>
+        <div class="step-desc">Build scripts read your server URL and API key from <code>deploy/config</code> automatically. Pick a preset (the app you want to disguise the payload as) and run the build for your target's OS.</div>
+        <pre style="margin-top:10px"><code># Windows (run from repo root in PowerShell)
+.\build_windows.ps1 -Preset chrome
+
+# macOS (run on a Mac)
+./build_mac.sh --preset chrome
+
+# Linux
+sudo ./build_linux.sh --preset chrome</code></pre>
+        <div class="step-desc">The built binary lands in <code>payloads/</code>. Add <code>-Upload</code> / <code>--upload</code> to push it to the payload server immediately. See the <a href="/guide/build">Build guide</a> for all options.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Deliver the payload</div>
+        <div class="step-desc">The easiest delivery method is a calendar invite with the smart link embedded. When the target clicks the meeting link, their OS is detected and the matching payload downloads automatically.</div>
+        <div class="step-desc" style="margin-top:8px">Go to <a href="/payloads">Payloads</a> → Calendar Invite, pick a preset, fill in the recipient and time, then either download the ICS and send it manually, or click <strong>Send Invite</strong> (requires Gmail or Outlook sign-in). See the <a href="/guide/delivery">Delivery guide</a> for full details.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Target runs the payload</div>
+        <div class="step-desc">When the target executes the binary, BrowserBleed extracts credentials from browser profile directories, session storage, and running browser processes, then POSTs the encrypted report to your server. The payload exits cleanly with no visible side effects.</div>
+        <div class="step-desc" style="margin-top:8px">You can watch the server logs for the incoming upload, or just refresh <a href="/">Reports</a>.</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Review the report</div>
+        <div class="step-desc">Reports appear on the <a href="/">Reports</a> page with hostname, run time, and hit count. Click <strong>View</strong> to read the full output, or download as <code>txt</code> / <code>csv</code>.</div>
+        <div class="step-desc" style="margin-top:8px">Reports are stored encrypted on disk with AES-256-GCM and auto-expire after the configured TTL (default 24h).</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-body">
+        <div class="step-title">Validate credentials</div>
+        <div class="step-desc">Download <code>results.csv</code> from a report, then run:</div>
+        <pre style="margin-top:10px"><code>python3 sessiontest.py results.csv</code></pre>
+        <div class="step-desc"><code>sessiontest.py</code> tests each captured token and cookie session against its live service and reports identity and access level. See the <a href="/guide/sessiontest">Session Test guide</a> for all options.</div>
+      </div>
+    </li>
+  </ol>
+
+  <!-- ── Server config ── -->
+  <h2>Server configuration</h2>
+  <p>All key settings live in <code>deploy/config</code>:</p>
+  <pre><code>DOMAIN=reports.yourdomain.com
+BB_API_KEY=your-secret-key
+ENCRYPTION_KEY=64-char-hex-key   # openssl rand -hex 32
+REGION=us-east-1
+INSTANCE_ID=i-xxxxxxxxxxxxxxxxx</code></pre>
+  <p>The <code>BB_API_KEY</code> is used to authenticate the web UI (entered at <code>/login</code>), the payload upload endpoint, and the build agent. Keep it secret.</p>
+  <p>The <code>ENCRYPTION_KEY</code> encrypts all stored reports at rest. If you lose this key, existing reports cannot be decrypted.</p>
+
+</div>
+</body>
+</html>

