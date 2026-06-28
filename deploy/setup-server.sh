@@ -31,6 +31,19 @@ scp -i "$KEY" -o StrictHostKeyChecking=no \
   "ec2-user@$PUBLIC_IP:/tmp/"
 rm -f "$NGINX_RENDERED"
 
+# ── Create /opt/bb-reports/.env on the server ────────────────────────────────
+echo "[*] Writing /opt/bb-reports/.env..."
+$SSH "BB_API_KEY=${BB_API_KEY} ENCRYPTION_KEY=${ENCRYPTION_KEY} REPORT_TTL=${REPORT_TTL} DOMAIN=${DOMAIN} sudo -E bash -s" << 'WRITE_ENV'
+set -euo pipefail
+mkdir -p /opt/bb-reports
+printf 'API_KEY=%s\nENCRYPTION_KEY=%s\nBASE_URL=https://%s\nREPORT_TTL=%s\n' \
+    "$BB_API_KEY" "$ENCRYPTION_KEY" "$DOMAIN" "$REPORT_TTL" \
+    > /opt/bb-reports/.env
+chmod 600 /opt/bb-reports/.env
+chown root:root /opt/bb-reports/.env
+echo "[+] /opt/bb-reports/.env written."
+WRITE_ENV
+
 # ── Run remote setup ─────────────────────────────────────────────────────────
 $SSH "DOMAIN=${DOMAIN} EMAIL=${EMAIL} sudo -E bash -s" << 'REMOTE'
 set -euo pipefail

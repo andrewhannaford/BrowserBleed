@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -364,12 +365,19 @@ func (h *Handler) deleteExpired() {
 
 func (h *Handler) bearerAuth(r *http.Request) bool {
 	auth := r.Header.Get("Authorization")
-	return strings.HasPrefix(auth, "Bearer ") && strings.TrimPrefix(auth, "Bearer ") == h.apiKey
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return false
+	}
+	tok := strings.TrimPrefix(auth, "Bearer ")
+	return subtle.ConstantTimeCompare([]byte(tok), []byte(h.apiKey)) == 1
 }
 
 func (h *Handler) cookieAuth(r *http.Request) bool {
 	c, err := r.Cookie("bb_key")
-	return err == nil && c.Value == h.apiKey
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(h.apiKey)) == 1
 }
 
 func (h *Handler) isAPIRequest(r *http.Request) bool {
@@ -435,11 +443,12 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		r.ParseForm()
 		key := r.FormValue("key")
-		if key == h.apiKey {
+		if subtle.ConstantTimeCompare([]byte(key), []byte(h.apiKey)) == 1 {
 			h.setSessionCookie(w)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
+		time.Sleep(time.Second) // slow brute-force attempts
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		h.loginTpl.Execute(w, loginData{Error: "Invalid API key."})

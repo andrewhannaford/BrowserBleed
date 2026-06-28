@@ -4,7 +4,7 @@ invite.py — Generate ICS calendar invites with a BrowserBleed smart delivery l
 
 Usage:
   python3 invite.py --preset chrome --from-name "Sarah Johnson" \
-      --from-email sarah@company.com --to target@victim.com
+      --from-email sarah@company.com --to target@target.example.com
 """
 
 import argparse
@@ -257,19 +257,19 @@ Examples:
   # Basic — reads DOMAIN from deploy/config:
   python3 invite.py --preset chrome \\
       --from-name "Sarah Johnson" --from-email sarah@company.com \\
-      --to target@victim.com
+      --to target@target.example.com
 
   # Multiple recipients, custom subject, Teams disguise:
   python3 invite.py --preset teams \\
       --from-name "IT Support" --from-email it@company.com \\
-      --to alice@victim.com --to bob@victim.com \\
+      --to alice@target.example.com --to bob@target.example.com \\
       --subject "Mandatory Security Training" --disguise teams \\
       --date "2026-07-01 09:00" --duration 60
 
   # Override server URL, write to specific file:
   python3 invite.py --preset zoom --server https://reports.example.com \\
       --from-name "HR" --from-email hr@company.com \\
-      --to target@victim.com --out /tmp/meeting.ics
+      --to target@target.example.com --out /tmp/meeting.ics
 """)
     p.add_argument('--preset',     required=True,  choices=sorted(PRESETS),
                    help='Payload preset — determines smart link and default disguise')

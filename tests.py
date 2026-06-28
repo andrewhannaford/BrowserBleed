@@ -728,7 +728,7 @@ _STS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 
 
 class TestAWS(unittest.TestCase):
-    KEY    = "AKIAIOSFODNN7EXAMPLE"
+    KEY    = "AKIAIOSFODNN7EXAMPLE"      # AWS's official documentation example key — not a real credential
     SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
     @patch("sessiontest.urllib.request.urlopen")
