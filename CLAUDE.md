@@ -98,7 +98,8 @@ Then re-run the deploy script. No other credentials needed.
 | `POST /r/{id}/delete` | Required | Delete single report |
 | `POST /r/delete-bulk` | Required | Delete multiple reports — JSON `{"ids":[...]}` |
 | `GET /r/export-bulk` | Required | Export reports as zip — query `?ids=...` |
-| `GET /payloads` | Required | Payload manager + build command generator |
+| `GET /guide` | Required | sessiontest.py guide |
+| `GET /payloads` | Required | Payload manager + build command generator + session test command |
 | `POST /payloads` | Required | Upload payload file |
 | `GET /payloads/{name}` | Required | Download payload file |
 | `POST /payloads/{name}/delete` | Required | Delete payload file |

@@ -161,6 +161,7 @@ type Handler struct {
 	reportTpl   *template.Template
 	loginTpl    *template.Template
 	payloadsTpl *template.Template
+	guideTpl    *template.Template
 }
 
 func deriveKey(hexKey string) ([]byte, error) {
@@ -248,6 +249,10 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 	if err != nil {
 		return nil, err
 	}
+	guideTpl, err := template.New("guide.html").Funcs(funcMap).ParseFS(webFS, "guide.html")
+	if err != nil {
+		return nil, err
+	}
 
 	payloadsDir := filepath.Join(dataDir, "payloads")
 	if err := os.MkdirAll(payloadsDir, 0750); err != nil {
@@ -270,6 +275,7 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 		reportTpl:   reportTpl,
 		loginTpl:    loginTpl,
 		payloadsTpl: payloadsTpl,
+		guideTpl:    guideTpl,
 	}, nil
 }
 
@@ -287,6 +293,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/invite/config", h.handleInviteConfig)
 	mux.HandleFunc("/invite/send", h.handleInviteSend)
 	mux.HandleFunc("/auth/", h.handleAuth)
+	mux.HandleFunc("/guide", h.handleGuide)
 	mux.HandleFunc("/p/", h.handleSmartDeliver)
 	mux.HandleFunc("/", h.handleIndex)
 }
@@ -550,6 +557,14 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	h.indexTpl.Execute(w, reports)
+}
+
+func (h *Handler) handleGuide(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	h.guideTpl.Execute(w, nil)
 }
 
 func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrowserBleed — Guide</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzBhMGMxMCIvPjxwYXRoIGQ9Ik0xNiA2QzE2IDYgOCAxNiA4IDIxYTggOCAwIDAgMCAxNiAwYzAtNS04LTE1LTgtMTV6IiBmaWxsPSIjZjg1MTQ5Ii8+PC9zdmc+">
+<style>
+:root{
+  --bg:#0a0c10;--surface:#10141a;--surface2:#13181f;--surface3:#0d1117;
+  --border:#1e2530;--border-h:#2d3748;
+  --text:#cdd5e0;--dim:#5a6478;--muted:#3d4758;
+  --accent:#4f8ef7;--green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --radius:8px;
+  --mono:"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:14px;min-height:100vh}
+.shell{max-width:900px;margin:0 auto;padding:0 24px 80px}
+
+/* nav */
+.topbar{display:flex;align-items:center;border-bottom:1px solid var(--border);margin-bottom:40px;padding-top:20px}
+.topbar-brand{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding-right:24px;border-right:1px solid var(--border);margin-right:4px;white-space:nowrap}
+.nav-link{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:500;color:var(--dim);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s}
+.nav-link:hover{color:var(--text)}.nav-link.active{color:var(--accent);border-bottom-color:var(--accent)}
+.nav-icon{width:14px;height:14px;opacity:.7}
+
+/* page header */
+.page-title{font-size:26px;font-weight:600;margin-bottom:6px}
+.page-sub{font-size:14px;color:var(--dim);margin-bottom:36px}
+
+/* content */
+h2{font-size:16px;font-weight:700;color:var(--text);margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:24px 0 10px}
+p{font-size:14px;color:var(--text);line-height:1.65;margin-bottom:12px}
+p:last-child{margin-bottom:0}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* code + pre */
+code{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+pre{background:var(--surface3);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;font-family:var(--mono);font-size:13px;color:var(--text);line-height:1.6;overflow-x:auto;margin-bottom:16px}
+pre code{background:none;border:none;padding:0;font-size:13px}
+
+/* table */
+.tbl-wrap{overflow-x:auto;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:var(--surface2);color:var(--dim);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:8px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody td{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+.td-code{font-family:var(--mono);font-size:12px;color:var(--accent);white-space:nowrap}
+.td-dim{color:var(--dim)}
+
+/* status badges */
+.badge{display:inline-block;font-size:11px;font-weight:600;border-radius:4px;padding:2px 7px;border:1px solid}
+.badge-valid{color:var(--green);background:rgba(63,185,80,.1);border-color:rgba(63,185,80,.3)}
+.badge-expired{color:var(--yellow);background:rgba(210,153,34,.1);border-color:rgba(210,153,34,.3)}
+.badge-invalid{color:var(--red);background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.3)}
+.badge-info{color:var(--dim);background:rgba(90,100,120,.1);border-color:var(--border)}
+.badge-error{color:var(--red);background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.3)}
+
+/* callout */
+.callout{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 var(--radius) var(--radius) 0;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--dim);line-height:1.6}
+.callout strong{color:var(--text)}
+
+@media(max-width:640px){
+  .shell{padding:0 12px 64px}
+  .topbar-brand{padding-right:14px;font-size:12px}
+  .nav-link{padding:8px 10px;font-size:12px}
+  .page-title{font-size:20px}
+  pre{font-size:11px;padding:12px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <span class="topbar-brand">BrowserBleed</span>
+    <a href="/" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 4h12v2H2V6zm0 4h8v2H2v-2z"/></svg>Reports
+    </a>
+    <a href="/payloads" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>Payloads
+    </a>
+    <a href="/guide" class="nav-link active">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.744 3.744 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.75 3.28v7.205c.46-.302.979-.44 1.5-.44h3.75V2.5h-3.495a2.25 2.25 0 0 0-1.755.78ZM1.5 2.5V12h3.758c.52 0 1.039.138 1.499.44V5.78A2.25 2.25 0 0 0 5.003 5H1.5Z"/></svg>
+      Guide
+    </a>
+  </div>
+
+  <h1 class="page-title">sessiontest.py</h1>
+  <p class="page-sub">Validate credentials and cookie sessions captured by BrowserBleed against live services.</p>
+
+  <div class="callout">
+    <strong>For authorized red team use only.</strong> Only run against credentials you are authorized to test.
+  </div>
+
+  <!-- ── Overview ── -->
+  <h2>Overview</h2>
+  <p>
+    <code>sessiontest.py</code> reads a <code>bb_results.csv</code> produced by BrowserBleed and attempts to authenticate to each identified service. It reports the identity and access level for each credential that is still valid.
+  </p>
+  <p>
+    API tokens are identified by their prefix (e.g. <code>ghp_</code> for GitHub, <code>sk-ant-</code> for Anthropic). Cookie sessions are grouped by domain and tested against known per-domain auth endpoints. AWS key pairs are signed with SigV4 and verified via STS. JWTs are decoded locally and checked for expiry.
+  </p>
+
+  <!-- ── Prerequisites ── -->
+  <h2>Prerequisites</h2>
+  <p>Python 3.10+ is required. No third-party packages are needed for basic use.</p>
+  <p>The <code>--browser</code> flag requires Playwright:</p>
+  <pre><code>pip install playwright
+playwright install chromium</code></pre>
+
+  <!-- ── Usage ── -->
+  <h2>Usage</h2>
+  <pre><code>python3 sessiontest.py [csv_file] [options]</code></pre>
+  <p>Use the <a href="/payloads">Session Test command builder on the Payloads page</a> to generate the exact command for your OS.</p>
+
+  <h3>Flags</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td class="td-code">csv_file</td><td class="td-dim">auto</td><td>Path to <code>bb_results.csv</code>. Auto-detected in the current directory if omitted.</td></tr>
+      <tr><td class="td-code">--browser</td><td class="td-dim">off</td><td>Open a Playwright Chromium browser pre-loaded with captured cookies for manual verification. Requires <code>playwright</code>.</td></tr>
+      <tr><td class="td-code">--timeout SECS</td><td class="td-dim">10</td><td>Per-request HTTP timeout in seconds.</td></tr>
+      <tr><td class="td-code">--delay SECS</td><td class="td-dim">0.3</td><td>Delay between requests to avoid rate-limiting.</td></tr>
+      <tr><td class="td-code">--no-verify-ssl</td><td class="td-dim">off</td><td>Skip TLS certificate verification. Useful for internal proxies or test environments.</td></tr>
+      <tr><td class="td-code">--json</td><td class="td-dim">off</td><td>Output results as JSON instead of the colour-coded table. Pipe into <code>jq</code> for filtering.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ── Services ── -->
+  <h2>Services tested</h2>
+
+  <h3>API tokens — auto-detected by prefix</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Service</th><th>Prefix(es)</th><th>Endpoint called</th></tr></thead>
+    <tbody>
+      <tr><td>GitHub</td><td class="td-code">ghp_ gho_ ghs_ ghr_ ghu_</td><td><code>/user</code>, <code>/user/orgs</code>, <code>/user/repos</code></td></tr>
+      <tr><td>Google OAuth</td><td class="td-code">ya29.</td><td><code>/oauth2/v3/userinfo</code>, then <code>/tokeninfo</code></td></tr>
+      <tr><td>Slack</td><td class="td-code">xoxp- xoxb- xoxa- xoxs- xoxe-</td><td><code>api/auth.test</code></td></tr>
+      <tr><td>Anthropic</td><td class="td-code">sk-ant-</td><td><code>/v1/models</code></td></tr>
+      <tr><td>OpenAI</td><td class="td-code">sk-</td><td><code>/v1/models</code></td></tr>
+      <tr><td>HuggingFace</td><td class="td-code">hf_</td><td><code>/api/whoami-v2</code></td></tr>
+      <tr><td>Stripe</td><td class="td-code">sk_live_ sk_test_ rk_live_ rk_test_</td><td><code>/v1/account</code></td></tr>
+      <tr><td>npm</td><td class="td-dim"><em>label contains "npm"</em></td><td><code>/-/whoami</code></td></tr>
+      <tr><td>AWS</td><td class="td-code">AKIA ASIA AROA AIDA</td><td>STS <code>GetCallerIdentity</code> (SigV4 signed)</td></tr>
+      <tr><td>JWT</td><td class="td-dim"><em>three base64url parts</em></td><td>Decoded locally — no network call</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>AWS requires both an access key ID and a secret access key in the CSV. If BrowserBleed captured both and they appear as <code>AWS Access Key</code> / <code>AWS Secret Key</code> labels, they are paired automatically.</p>
+
+  <h3>Cookie sessions</h3>
+  <p>Cookies are grouped by domain. For known domains, a specific auth endpoint is tested. For unknown domains, the tool compares the HTTP status with vs. without cookies to detect redirect-to-login behaviour.</p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Domain</th><th>Auth cookie</th><th>Method</th></tr></thead>
+    <tbody>
+      <tr><td>github.com</td><td class="td-code">user_session</td><td>GET <code>/settings</code> — redirect check</td></tr>
+      <tr><td>google.com / accounts.google.com</td><td class="td-code">SAPISID</td><td>GET <code>/myaccount.google.com/</code> — redirect check</td></tr>
+      <tr><td>slack.com / app.slack.com</td><td class="td-code">d</td><td>POST <code>api/auth.test</code> — JSON response</td></tr>
+      <tr><td>discord.com</td><td class="td-code">__dcfduid</td><td>GET <code>/channels/@me</code> — redirect check</td></tr>
+      <tr><td>twitter.com / x.com</td><td class="td-code">auth_token</td><td>GET <code>/home</code> — redirect check</td></tr>
+      <tr><td>linkedin.com</td><td class="td-code">li_at</td><td>GET <code>/feed/</code> — redirect check</td></tr>
+      <tr><td>reddit.com</td><td class="td-code">token_v2</td><td>GET <code>/settings/</code> — redirect check</td></tr>
+      <tr><td>notion.so</td><td class="td-code">token_v2</td><td>POST <code>/api/v3/loadUserContent</code> — JSON response</td></tr>
+      <tr><td><em>other domains</em></td><td class="td-dim"><em>any</em></td><td>200-vs-redirect heuristic on <code>/</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <strong>Slack note:</strong> The <code>d</code> cookie is the Slack session token and is accepted directly by <code>auth.test</code>, returning the workspace identity without needing an app token.
+  </div>
+
+  <!-- ── CSV format ── -->
+  <h2>CSV format</h2>
+  <p><code>bb_results.csv</code> is generated by BrowserBleed automatically. Relevant columns used by sessiontest:</p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Column</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td class="td-code">label</td><td>Credential type (e.g. <code>GitHub Token</code>, <code>Cookie</code>). Rows with "cookie" in the label are treated as cookie sessions.</td></tr>
+      <tr><td class="td-code">service</td><td>Service name or domain (e.g. <code>github.com</code>). Used as the domain for cookie grouping.</td></tr>
+      <tr><td class="td-code">address</td><td>Fallback domain for cookies if <code>service</code> is empty.</td></tr>
+      <tr><td class="td-code">value</td><td>The credential value. For cookies, formatted as <code>name=value</code>.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ── Status meanings ── -->
+  <h2>Status meanings</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge badge-valid">✓ valid</span></td><td>Credential accepted, identity and access resolved.</td></tr>
+      <tr><td><span class="badge badge-expired">⏱ expired</span></td><td>JWT is past its <code>exp</code> claim, or token was revoked.</td></tr>
+      <tr><td><span class="badge badge-invalid">✗ invalid</span></td><td>Rejected with 401 or 403.</td></tr>
+      <tr><td><span class="badge badge-error">! error</span></td><td>Network failure or unexpected response.</td></tr>
+      <tr><td><span class="badge badge-info">· info</span></td><td>Decoded locally (JWT) or cookie session could not be confirmed without browser.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ── Examples ── -->
+  <h2>Examples</h2>
+
+  <h3>Quick test — auto-find CSV</h3>
+  <pre><code>python3 sessiontest.py</code></pre>
+
+  <h3>Explicit file path</h3>
+  <pre><code>python3 sessiontest.py /path/to/results.csv</code></pre>
+
+  <h3>Open browser for cookie sessions (requires Playwright)</h3>
+  <pre><code>python3 sessiontest.py --browser</code></pre>
+  <p>Launches a Chromium window with the captured cookies pre-loaded. You can manually verify the session and inspect what the victim account can access.</p>
+
+  <h3>JSON output — filter with jq</h3>
+  <pre><code>python3 sessiontest.py --json | jq '.[] | select(.status == "valid")'
+python3 sessiontest.py --json | jq '[.[] | select(.service == "GitHub")]'</code></pre>
+
+  <h3>Slower requests to avoid rate-limits</h3>
+  <pre><code>python3 sessiontest.py --timeout 20 --delay 1.0</code></pre>
+
+  <h3>Skip TLS verification (proxy / internal env)</h3>
+  <pre><code>python3 sessiontest.py --no-verify-ssl</code></pre>
+
+  <h3>Windows</h3>
+  <pre><code>python sessiontest.py
+python sessiontest.py results.csv --browser --timeout 15</code></pre>
+
+  <!-- ── Tips ── -->
+  <h2>Tips</h2>
+  <p><strong>Deduplification:</strong> Non-cookie credentials with the same value are tested only once, even if they appear multiple times in the CSV.</p>
+  <p><strong>AWS key pairing:</strong> The tool looks for a single <code>AKIA…</code> / <code>ASIA…</code> access key and a single matching secret key (label <code>AWS Secret Key</code> or <code>AWS Secret Access Key</code>, 40 chars). If found as a pair, it signs an STS request. If the secret is missing, the row is skipped with an <em>info</em> status.</p>
+  <p><strong>Unknown cookie domains:</strong> Any domain not in the known list falls back to a 200-vs-redirect heuristic. This is accurate for most SaaS apps but may give false negatives on apps that return 200 even for unauthenticated visitors. Use <code>--browser</code> to confirm.</p>
+
+</div>
+</body>
+</html>
