@@ -21,4 +21,4 @@ jobs:
         run: pip install pytest cryptography
 
       - name: Run test suite
-        run: python3 -m pytest test_sessiontest.py -v --tb=short
+        run: python3 -m pytest tests.py -v --tb=short
