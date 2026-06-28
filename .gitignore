@@ -35,6 +35,7 @@ zoom
 whatsapp-desktop
 telegram-desktop
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 *.spec
