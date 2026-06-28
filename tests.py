@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-test_sessiontest.py — Unified test suite for BrowserBleed extractors and sessiontest.py
+tests.py — Unified test suite for BrowserBleed extractors and sessiontest.py
 
 Covers:
   - sessiontest.py         (credential validation tool)
   - BrowserBleed_linux.py  (Linux memory/SQLite extraction)
   - BrowserBleed_mac.py    (macOS Keychain/memory extraction)
+  - BrowserBleed.py        (Windows memory/SQLite extraction)
 
 Run:
-    python3 -m pytest test_sessiontest.py -v
-    python3 -m pytest test_sessiontest.py -v --tb=short
+    python3 -m pytest tests.py -v
+    python3 -m pytest tests.py -v --tb=short
 """
 
 import base64

@@ -18,6 +18,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
+        # playwright is optional (sessiontest.py --browser); skipped in CI
         run: pip install pytest cryptography
 
       - name: Run test suite

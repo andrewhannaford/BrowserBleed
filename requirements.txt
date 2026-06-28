@@ -1,0 +1,10 @@
+# Required — AES decryption for all three extractors
+cryptography>=41.0
+
+# Required for building standalone binaries (build_*.sh / build_windows.ps1)
+# Not needed to run the Python source directly
+pyinstaller>=6.0
+
+# Optional — enables browser session replay in sessiontest.py (--browser flag)
+# After installing: python3 -m playwright install chromium
+# playwright>=1.40

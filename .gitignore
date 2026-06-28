@@ -1,3 +1,6 @@
+# Claude Code context file — contains operational deployment details
+CLAUDE.md
+
 # Output / test runs
 browserbleed_output.txt
 bb_results.txt
