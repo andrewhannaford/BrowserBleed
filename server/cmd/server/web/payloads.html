@@ -118,6 +118,21 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
 .flag-cb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none;font-family:var(--mono)}
 .flag-cb input{accent-color:var(--accent);cursor:pointer}
 
+/* email / oauth */
+.oauth-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.oauth-row:last-child{border-bottom:none}
+.oauth-provider-icon{width:32px;height:32px;flex-shrink:0}
+.oauth-provider-icon svg{width:32px;height:32px}
+.oauth-info{flex:1;min-width:0}
+.oauth-info-name{font-size:13px;font-weight:600}
+.oauth-info-email{font-size:11px;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oauth-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--green);background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.25);border-radius:10px;padding:2px 8px}
+.hint-box{font-size:11px;color:var(--dim);background:var(--surface3);border:1px solid var(--border);border-radius:5px;padding:8px 12px;margin-bottom:14px;line-height:1.5}
+.hint-box:empty{display:none}
+details summary{font-size:12px;font-weight:600;color:var(--dim);cursor:pointer;padding:8px 0;user-select:none;list-style:none}
+details summary::before{content:"▶ ";font-size:10px}
+details[open] summary::before{content:"▼ "}
+
 /* toast */
 .toast-rack{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:999;pointer-events:none}
 .toast{display:flex;align-items:center;gap:10px;padding:11px 16px;border-radius:7px;font-size:13px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.5);pointer-events:auto;animation:toast-in .2s ease;border:1px solid}
@@ -381,10 +396,8 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
       <span class="section-title">Calendar Invite</span>
     </div>
     <div class="section-body">
-      <div class="group-label">Select preset</div>
-      <div class="preset-grid" id="ics-browser-grid"></div>
-      <div class="group-label">Chat Apps</div>
-      <div class="preset-grid" id="ics-chat-grid"></div>
+      <div class="group-label">Select meeting type</div>
+      <div class="preset-grid" id="ics-preset-grid"></div>
 
       <div class="config-panel" id="ics-config-panel">
         <div id="ics-smart-link-row" class="smart-link-row" style="display:none">
@@ -424,11 +437,115 @@ input[type=file].upload-input::file-selector-button{background:var(--surface);co
           </div>
         </div>
 
-        <button class="btn btn-green" onclick="generateICS()" style="margin-top:4px">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.75 0a.75.75 0 0 1 .75.75V2h5V.75a.75.75 0 0 1 1.5 0V2h1.25c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 16H2.75A1.75 1.75 0 0 1 1 14.25V3.75C1 2.784 1.784 2 2.75 2H4V.75A.75.75 0 0 1 4.75 0zm0 3.5h-.75a.25.25 0 0 0-.25.25V6h10V3.75a.25.25 0 0 0-.25-.25H10.5v.75a.75.75 0 0 1-1.5 0V3.5h-5v.75a.75.75 0 0 1-1.5 0V3.5zm-1 4h9.5v6.75a.25.25 0 0 1-.25.25H2.75a.25.25 0 0 1-.25-.25V7.5z"/></svg>
-          Generate &amp; Download ICS
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <button class="btn btn-green" onclick="generateICS()">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M7.47 10.78a.75.75 0 0 0 1.06 0l3.75-3.75a.75.75 0 0 0-1.06-1.06L8.75 8.44V1.75a.75.75 0 0 0-1.5 0v6.69L4.78 5.97a.75.75 0 0 0-1.06 1.06l3.75 3.75zM1.75 13.5a.75.75 0 0 0 0 1.5h12.5a.75.75 0 0 0 0-1.5H1.75z"/></svg>
+            Download ICS
+          </button>
+          <button class="btn btn-primary" id="btn-send-invite" onclick="sendInvite()">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M1.958 1.26a.75.75 0 0 1 .808.083l12.5 9.5a.75.75 0 0 1 0 1.215l-12.5 9.5A.75.75 0 0 1 1.5 21V2a.75.75 0 0 1 .458-.74zM3 3.98v8.04l7.796-4.02L3 3.98z"/></svg>
+            Send Invite
+          </button>
+        </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── Email settings ── -->
+  <div class="section">
+    <div class="section-head" style="cursor:pointer" onclick="toggleEmailSettings()">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" opacity=".5"><path d="M1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-8.5C0 2.784.784 2 1.75 2zM1.5 12.251c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V5.06l-5.563 3.86a1.75 1.75 0 0 1-1.874 0L1.5 5.06v7.19zm13-8.49L8 7.71 1.5 3.76v-.01a.25.25 0 0 1 .25-.25h12.5a.25.25 0 0 1 .25.25v.011z"/></svg>
+      <span class="section-title">Email Settings</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="email-settings-toggle-label">Sign in to enable Send Invite</span>
+    </div>
+    <div class="section-body" id="email-settings-body" style="display:none">
+      <!-- Connected accounts -->
+      <div class="group-label" style="margin-bottom:12px">Sign in with</div>
+      <div>
+        <div class="oauth-row">
+          <div class="oauth-provider-icon">
+            <svg viewBox="0 0 24 24"><path fill="#EA4335" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          </div>
+          <div class="oauth-info">
+            <div class="oauth-info-name">Gmail</div>
+            <div class="oauth-info-email" id="google-email">Not connected</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="oauth-badge" id="google-badge" style="display:none">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+              Connected
+            </span>
+            <button class="btn btn-primary" id="google-connect-btn" onclick="connectProvider('google')">Sign in</button>
+            <button class="btn btn-del" id="google-disconnect-btn" onclick="disconnectProvider('google')" style="display:none">Disconnect</button>
+          </div>
+        </div>
+        <div class="oauth-row">
+          <div class="oauth-provider-icon">
+            <svg viewBox="0 0 24 24"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/><path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>
+          </div>
+          <div class="oauth-info">
+            <div class="oauth-info-name">Outlook / Office 365</div>
+            <div class="oauth-info-email" id="microsoft-email">Not connected</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="oauth-badge" id="microsoft-badge" style="display:none">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+              Connected
+            </span>
+            <button class="btn btn-primary" id="microsoft-connect-btn" onclick="connectProvider('microsoft')">Sign in</button>
+            <button class="btn btn-del" id="microsoft-disconnect-btn" onclick="disconnectProvider('microsoft')" style="display:none">Disconnect</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- OAuth app credentials -->
+      <details style="margin-top:18px">
+        <summary>OAuth app credentials <span style="font-size:10px;color:var(--muted);font-weight:400">(one-time developer setup)</span></summary>
+        <div style="margin-top:14px">
+          <div class="hint-box">
+            Register OAuth apps to get client IDs/secrets. Set redirect URIs to the values shown below.<br>
+            <strong>Google:</strong> console.cloud.google.com → APIs &amp; Services → Credentials → Create OAuth 2.0 Client ID (Web application). Enable Gmail API. Redirect URI: <code style="font-family:var(--mono);font-size:10px" id="google-redirect-uri"></code><br>
+            <strong>Microsoft:</strong> portal.azure.com → Entra ID → App registrations. Grant delegated permissions: Mail.Send, User.Read. Redirect URI: <code style="font-family:var(--mono);font-size:10px" id="ms-redirect-uri"></code>
+          </div>
+          <div class="group-label" style="margin-bottom:8px">Google</div>
+          <div class="fields">
+            <div class="field field-xl"><label>Client ID</label><input type="text" id="oa-google-id" placeholder="123456789-abc.apps.googleusercontent.com"></div>
+            <div class="field field-xl"><label>Client Secret</label><input type="password" id="oa-google-secret" placeholder="GOCSPX-…"></div>
+          </div>
+          <div class="group-label" style="margin-bottom:8px;margin-top:12px">Microsoft</div>
+          <div class="fields">
+            <div class="field field-xl"><label>Client ID</label><input type="text" id="oa-ms-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+            <div class="field field-xl"><label>Client Secret</label><input type="password" id="oa-ms-secret" placeholder="your-client-secret"></div>
+          </div>
+          <button class="btn btn-primary" onclick="saveOAuthCreds()" style="margin-top:8px">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M13.854 3.146a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 9.793l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>
+            Save Credentials
+          </button>
+        </div>
+      </details>
+
+      <!-- Custom SMTP fallback -->
+      <details style="margin-top:12px">
+        <summary>Custom SMTP <span style="font-size:10px;color:var(--muted);font-weight:400">(fallback — used only if no provider is signed in)</span></summary>
+        <div style="margin-top:14px">
+          <div class="fields">
+            <div class="field field-wide"><label>From Name</label><input type="text" id="em-from-name" placeholder="Sarah Johnson"></div>
+            <div class="field field-xl"><label>From Email</label><input type="email" id="em-from-email" placeholder="sarah@company.com"></div>
+          </div>
+          <div class="fields">
+            <div class="field field-xl"><label>SMTP Username</label><input type="email" id="em-smtp-user" placeholder="your@gmail.com"></div>
+            <div class="field field-xl"><label>Password / App Password</label><input type="password" id="em-smtp-pass" placeholder="••••••••••••••••"></div>
+          </div>
+          <div class="fields">
+            <div class="field field-xl"><label>SMTP Host</label><input type="text" id="em-smtp-host" placeholder="smtp.example.com"></div>
+            <div class="field field-sm"><label>Port</label><input type="number" id="em-smtp-port" value="587"></div>
+          </div>
+          <button class="btn btn-primary" onclick="saveEmailConfig()" style="margin-top:8px">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M13.854 3.146a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 9.793l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>
+            Save SMTP Settings
+          </button>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -539,7 +656,10 @@ function buildCard(p, onClick) {
 }
 
 function selectCard(p, gridPrefix) {
-  document.querySelectorAll(`#${gridPrefix}-browser-grid .preset-card, #${gridPrefix}-chat-grid .preset-card`)
+  const grids = gridPrefix === 'ics'
+    ? '#ics-preset-grid .preset-card'
+    : `#${gridPrefix}-browser-grid .preset-card, #${gridPrefix}-chat-grid .preset-card`;
+  document.querySelectorAll(grids)
     .forEach(c => c.classList.toggle('selected', c.dataset.id === p.id));
 }
 
@@ -824,16 +944,203 @@ function showToast(msg) {
   }, 2200);
 }
 
+// ── Email / OAuth ─────────────────────────────────────────────────────────────
+
+function toggleEmailSettings() {
+  const body  = document.getElementById('email-settings-body');
+  const label = document.getElementById('email-settings-toggle-label');
+  const open  = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (open) loadAuthStatus(); // refresh when opening
+}
+
+async function loadAuthStatus() {
+  try {
+    const r = await fetch('/auth/status', {credentials: 'include'});
+    if (!r.ok) return;
+    const s = await r.json();
+
+    for (const [provider, info] of Object.entries(s)) {
+      const badge    = document.getElementById(provider + '-badge');
+      const emailEl  = document.getElementById(provider + '-email');
+      const connectBtn = document.getElementById(provider + '-connect-btn');
+      const disconnectBtn = document.getElementById(provider + '-disconnect-btn');
+      if (!badge) continue;
+      if (info.connected) {
+        badge.style.display = '';
+        emailEl.textContent = info.email || 'Connected';
+        connectBtn.style.display = 'none';
+        disconnectBtn.style.display = '';
+      } else {
+        badge.style.display = 'none';
+        emailEl.textContent = info.has_app_cred ? 'Not connected' : 'App credentials required';
+        connectBtn.style.display = '';
+        connectBtn.disabled = !info.has_app_cred;
+        disconnectBtn.style.display = 'none';
+      }
+    }
+
+    // Update header label and auto-fill from-email in ICS section
+    const connectedProviders = Object.entries(s).filter(([,i]) => i.connected);
+    const connectedEmails = connectedProviders.map(([,i]) => i.email || '').filter(Boolean);
+    const label = document.getElementById('email-settings-toggle-label');
+    label.textContent = connectedEmails.length ? connectedEmails.join(', ') : 'Sign in to enable Send Invite';
+
+    const fromEmailEl = document.getElementById('ics-from-email');
+    if (connectedEmails.length) {
+      fromEmailEl.value = connectedEmails[0];
+      fromEmailEl.readOnly = true;
+      fromEmailEl.style.opacity = '.5';
+      fromEmailEl.title = 'Set by connected account';
+    } else {
+      fromEmailEl.readOnly = false;
+      fromEmailEl.style.opacity = '';
+      fromEmailEl.title = '';
+    }
+
+    // Fill redirect URI hints
+    document.getElementById('google-redirect-uri').textContent = BASE_URL + '/auth/google/callback';
+    document.getElementById('ms-redirect-uri').textContent     = BASE_URL + '/auth/microsoft/callback';
+  } catch(e) {}
+}
+
+async function loadOAuthCreds() {
+  try {
+    const r = await fetch('/auth/config', {credentials: 'include'});
+    if (!r.ok) return;
+    const c = await r.json();
+    document.getElementById('oa-google-id').value     = c.google_client_id     || '';
+    document.getElementById('oa-google-secret').value = c.google_client_secret || '';
+    document.getElementById('oa-ms-id').value         = c.microsoft_client_id  || '';
+    document.getElementById('oa-ms-secret').value     = c.microsoft_client_secret || '';
+  } catch(e) {}
+}
+
+async function saveOAuthCreds() {
+  const body = {
+    google_client_id:        document.getElementById('oa-google-id').value.trim(),
+    google_client_secret:    document.getElementById('oa-google-secret').value,
+    microsoft_client_id:     document.getElementById('oa-ms-id').value.trim(),
+    microsoft_client_secret: document.getElementById('oa-ms-secret').value,
+  };
+  try {
+    const r = await fetch('/auth/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    if (r.ok) { showToast('App credentials saved'); loadAuthStatus(); }
+    else showToast('Failed to save credentials');
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+function connectProvider(provider) {
+  window.location.href = '/auth/' + provider;
+}
+
+async function disconnectProvider(provider) {
+  try {
+    const r = await fetch('/auth/' + provider + '/disconnect', {
+      method: 'POST', credentials: 'include',
+    });
+    if (r.ok) { showToast('Disconnected'); loadAuthStatus(); }
+    else showToast('Disconnect failed');
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function loadEmailConfig() {
+  try {
+    const r = await fetch('/invite/config', {credentials: 'include'});
+    if (!r.ok) return;
+    const cfg = await r.json();
+    document.getElementById('em-from-name').value  = cfg.from_name  || '';
+    document.getElementById('em-from-email').value = cfg.from_email || '';
+    document.getElementById('em-smtp-user').value  = cfg.smtp_user  || '';
+    document.getElementById('em-smtp-pass').value  = cfg.smtp_pass  || '';
+    document.getElementById('em-smtp-host').value  = cfg.smtp_host  || '';
+    document.getElementById('em-smtp-port').value  = cfg.smtp_port  || 587;
+  } catch(e) {}
+}
+
+async function saveEmailConfig() {
+  const cfg = {
+    provider:   'custom',
+    from_name:  document.getElementById('em-from-name').value.trim(),
+    from_email: document.getElementById('em-from-email').value.trim(),
+    smtp_user:  document.getElementById('em-smtp-user').value.trim(),
+    smtp_pass:  document.getElementById('em-smtp-pass').value,
+    smtp_host:  document.getElementById('em-smtp-host').value.trim(),
+    smtp_port:  parseInt(document.getElementById('em-smtp-port').value) || 587,
+  };
+  try {
+    const r = await fetch('/invite/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include',
+      body: JSON.stringify(cfg),
+    });
+    if (r.ok) showToast('SMTP settings saved');
+    else showToast('Failed to save settings');
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function sendInvite() {
+  if (!selectedICSPreset) { showToast('Select a preset first'); return; }
+  const to       = document.getElementById('ics-to').value.trim();
+  const subject  = document.getElementById('ics-subject').value.trim();
+  const dtVal    = document.getElementById('ics-datetime').value;
+  const duration = parseInt(document.getElementById('ics-duration').value);
+  const disguise = document.getElementById('ics-disguise').value;
+  const fromName = document.getElementById('ics-from-name').value.trim();
+  if (!to || !subject || !dtVal) { showToast('Fill in all invite fields'); return; }
+
+  const btn = document.getElementById('btn-send-invite');
+  btn.disabled = true;
+  const origHTML = btn.innerHTML;
+  btn.textContent = 'Sending…';
+
+  try {
+    const r = await fetch('/invite/send', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({
+        preset:    selectedICSPreset.id,
+        to:        [to],
+        subject,
+        start:     new Date(dtVal).toISOString(),
+        duration,
+        disguise,
+        from_name: fromName,
+      }),
+    });
+    if (r.ok) {
+      showToast('Invite sent to ' + to);
+    } else {
+      const text = await r.text();
+      showToast('Send failed: ' + text.trim());
+    }
+  } catch(e) {
+    showToast('Send error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHTML;
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   PRESETS.browsers.forEach(p => {
     document.getElementById('build-browser-grid').appendChild(buildCard(p, selectBuildPreset));
-    document.getElementById('ics-browser-grid').appendChild(buildCard(p, selectICSPreset));
   });
   PRESETS.chat.forEach(p => {
     document.getElementById('build-chat-grid').appendChild(buildCard(p, selectBuildPreset));
-    document.getElementById('ics-chat-grid').appendChild(buildCard(p, selectICSPreset));
   });
+  const ICS_PRESETS = ['zoom', 'teams'];
+  [...PRESETS.browsers, ...PRESETS.chat]
+    .filter(p => ICS_PRESETS.includes(p.id))
+    .forEach(p => document.getElementById('ics-preset-grid').appendChild(buildCard(p, selectICSPreset)));
   injectIcons();
 
   ['f-exe','f-bin','f-mac-bin'].forEach(id =>
@@ -844,6 +1151,10 @@ document.addEventListener('DOMContentLoaded', () => {
   tomorrow.setHours(10,0,0,0);
   document.getElementById('ics-datetime').value =
     `${tomorrow.getFullYear()}-${padZ(tomorrow.getMonth()+1)}-${padZ(tomorrow.getDate())}T10:00`;
+
+  loadAuthStatus();
+  loadOAuthCreds();
+  loadEmailConfig();
 });
 </script>
 </body>

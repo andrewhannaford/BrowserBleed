@@ -1,8 +1,22 @@
-# Output
+# Output / test runs
 browserbleed_output.txt
 bb_results.txt
 bb_results.csv
 bb_error.txt
+bb_test.txt
+bb_test.csv
+bb_exe_test.txt
+bb_exe_test.csv
+
+# Built payloads — contain baked-in server URL and API key
+payloads/
+
+# Compiled server binary
+server/browserbleed-server
+server/server
+
+# Misc
+*.zip
 
 # Build artifacts - binaries have your server URL baked in, don't commit them
 *.exe

@@ -11,10 +11,21 @@ import argparse
 import base64
 import os
 import random
+import smtplib
+import ssl
 import string
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
+
+PROVIDERS = {
+    'gmail':     ('smtp.gmail.com', 587),
+    'outlook':   ('smtp-mail.outlook.com', 587),
+    'office365': ('smtp.office365.com', 587),
+}
 
 PRESETS = {
     'chrome':   {'subject': 'Q3 Planning Sync',      'disguise': 'zoom'},
@@ -158,6 +169,32 @@ def build_description(disguise, subject, smart_url, from_name):
         ])
 
 
+def send_invite(ics_content, from_name, from_email, to_emails, subject,
+                smtp_host, smtp_port, smtp_user, smtp_pass):
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = formataddr((from_name, from_email))
+    msg['To'] = ', '.join(to_emails)
+
+    msg.attach(MIMEText(
+        f'You have been invited to: {subject}\n\n'
+        'This invite requires a calendar application to view.',
+        'plain', 'utf-8',
+    ))
+
+    cal = MIMEText(ics_content, 'calendar', 'utf-8')
+    cal.set_param('method', 'REQUEST')
+    msg.attach(cal)
+
+    ctx = ssl.create_default_context()
+    with smtplib.SMTP(smtp_host, smtp_port) as s:
+        s.ehlo()
+        s.starttls(context=ctx)
+        s.ehlo()
+        s.login(smtp_user, smtp_pass)
+        s.sendmail(from_email, to_emails, msg.as_string())
+
+
 def generate_ics(*, preset, from_name, from_email, to_emails,
                  subject, start_dt, duration_min, disguise, server_url):
     end_dt    = start_dt + timedelta(minutes=duration_min)
@@ -255,6 +292,15 @@ Examples:
                         '(default: read DOMAIN from deploy/config)')
     p.add_argument('--out',        metavar='FILE',
                    help='Output file (default: <preset>-invite.ics)')
+    p.add_argument('--send',       action='store_true',
+                   help='Send via SMTP instead of writing to file')
+    p.add_argument('--provider',   choices=sorted(PROVIDERS), metavar='NAME',
+                   help='SMTP provider shortcut: gmail, outlook, office365')
+    p.add_argument('--smtp-host',  metavar='HOST', help='SMTP host (overrides --provider)')
+    p.add_argument('--smtp-port',  type=int, default=587, metavar='PORT',
+                   help='SMTP port (default: 587)')
+    p.add_argument('--smtp-user',  metavar='USER', help='SMTP login / username')
+    p.add_argument('--smtp-pass',  metavar='PASS', help='SMTP password or app password')
 
     args = p.parse_args()
 
@@ -285,17 +331,42 @@ Examples:
         server_url   = server_url,
     )
 
-    with open(out_path, 'w', newline='', encoding='utf-8') as f:
-        f.write(ics)
+    info = [
+        f'    From:     {args.from_name} <{args.from_email}>',
+        f'    To:       {", ".join(args.to_emails)}',
+        f'    Subject:  {subject}',
+        f'    Start:    {start_dt.strftime("%Y-%m-%d %H:%M")} local',
+        f'    Duration: {args.duration} min',
+        f'    Disguise: {args.disguise if args.disguise != "auto" else PRESETS[args.preset]["disguise"]} ({"auto" if args.disguise == "auto" else "manual"})',
+        f'    Link:     {server_url}/p/{args.preset}',
+    ]
 
-    print(f'[+] Wrote {out_path}')
-    print(f'    From:     {args.from_name} <{args.from_email}>')
-    print(f'    To:       {", ".join(args.to_emails)}')
-    print(f'    Subject:  {subject}')
-    print(f'    Start:    {start_dt.strftime("%Y-%m-%d %H:%M")} local')
-    print(f'    Duration: {args.duration} min')
-    print(f'    Disguise: {args.disguise if args.disguise != "auto" else PRESETS[args.preset]["disguise"]} ({"auto" if args.disguise == "auto" else "manual"})')
-    print(f'    Link:     {server_url}/p/{args.preset}')
+    if args.send:
+        smtp_host = args.smtp_host
+        smtp_port = args.smtp_port
+        if args.provider and not smtp_host:
+            smtp_host, smtp_port = PROVIDERS[args.provider]
+        if not smtp_host:
+            p.error('--send requires --smtp-host or --provider')
+        if not args.smtp_user:
+            p.error('--send requires --smtp-user')
+        if not args.smtp_pass:
+            p.error('--send requires --smtp-pass')
+        try:
+            send_invite(ics, args.from_name, args.from_email, args.to_emails, subject,
+                        smtp_host, smtp_port, args.smtp_user, args.smtp_pass)
+        except Exception as exc:
+            print(f'[!] Send failed: {exc}', file=sys.stderr)
+            sys.exit(1)
+        print(f'[+] Sent to {", ".join(args.to_emails)} via {smtp_host}:{smtp_port}')
+        for line in info:
+            print(line)
+    else:
+        with open(out_path, 'w', newline='', encoding='utf-8') as f:
+            f.write(ics)
+        print(f'[+] Wrote {out_path}')
+        for line in info:
+            print(line)
 
 
 if __name__ == '__main__':
