@@ -66,6 +66,25 @@ def _get(url: str, headers: dict, *, body: bytes = None, method: str = "GET") ->
     except Exception as e:
         return 0, {"_error": str(e)}
 
+
+def _status_only(url: str, headers: dict) -> int:
+    """GET without following redirects — returns the bare first-hop HTTP status."""
+    class _NoRedir(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            return None
+    handlers: list = [_NoRedir()]
+    if url.startswith("https://"):
+        handlers.append(urllib.request.HTTPSHandler(context=_ssl_ctx))
+    opener = urllib.request.build_opener(*handlers)
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with opener.open(req, timeout=_timeout) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception:
+        return 0
+
 # ── JWT decode (no network) ───────────────────────────────────────────────────
 
 def _b64pad(s: str) -> str:
@@ -379,13 +398,32 @@ def test_aws(access_key: str, secret_key: str, label: str) -> Result:
         return Result("AWS", label, access_key[:16] + "…", "error", "—", str(e)[:80], {})
 
 
+def _test_generic_cookie_session(domain: str, cookies: list[dict], jar: str, cookie_names: str) -> Result:
+    """
+    Fallback for domains not in _DOMAIN_TESTS.
+    Compares first-hop status with vs. without cookies: if authenticated users get
+    a direct 200 while unauthenticated users are redirected, the session is active.
+    """
+    base_url = f"https://{domain.lstrip('.')}/"
+    status_anon = _status_only(base_url, {"User-Agent": _UA})
+    status_auth = _status_only(base_url, {"Cookie": jar, "User-Agent": _UA})
+
+    if status_auth == 200 and status_anon in (301, 302, 303, 307, 308):
+        return Result(domain, "Cookie session", cookie_names, "valid",
+                      "authenticated",
+                      f"200 with cookies vs {status_anon} without — session active", {})
+    if status_auth == 0:
+        return Result(domain, "Cookie session", cookie_names, "error",
+                      "—", "connection failed", {})
+    return Result(domain, "Cookie session", cookie_names, "info",
+                  "—",
+                  f"{len(cookies)} cookie(s) — HTTP {status_auth}/{status_anon} (use --browser to verify)", {})
+
+
 def test_cookie_session(domain: str, cookies: list[dict], *, browser: bool) -> list[Result]:
     """
     Test cookie session for a domain.
     cookies: list of {"name": ..., "value": ...}
-
-    For known services, hit an API endpoint.
-    Always report the cookie count and names.
     """
     results = []
     jar = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
@@ -395,23 +433,50 @@ def test_cookie_session(domain: str, cookies: list[dict], *, browser: bool) -> l
 
     known = _DOMAIN_TESTS.get(domain) or _DOMAIN_TESTS.get(_strip_sub(domain))
     if known:
-        url, key_cookie = known
+        url      = known[0]
+        key_cookie = known[1]
+        opts     = known[2] if len(known) > 2 else {}
+
         has_key = any(c["name"] == key_cookie for c in cookies)
-        if has_key:
-            status, data = _get(url, {"Cookie": jar, "User-Agent": _UA})
-            if status == 200:
+        if not has_key:
+            results.append(Result(domain, "Cookie session", cookie_names, "info",
+                                  "—", f"{len(cookies)} cookie(s) — auth cookie '{key_cookie}' not present", {}))
+        elif opts.get("no_redirect"):
+            status_auth = _status_only(url, {"Cookie": jar, "User-Agent": _UA})
+            status_anon = _status_only(url, {"User-Agent": _UA})
+            if status_auth == 200 and status_anon != 200:
+                results.append(Result(domain, "Cookie session", cookie_names, "valid",
+                                      "authenticated",
+                                      f"200 with cookies vs {status_anon} without — session active", {}))
+            elif status_auth == 200:
+                results.append(Result(domain, "Cookie session", cookie_names, "info",
+                                      "—", "200 with and without cookies — cannot confirm session", {}))
+            else:
+                stat = "invalid" if status_auth in (301, 302, 303, 307, 308) else "error"
+                results.append(Result(domain, "Cookie session", cookie_names, stat,
+                                      "—", f"HTTP {status_auth} — redirected to login", {}))
+        else:
+            headers = {"Cookie": jar, "User-Agent": _UA}
+            if opts.get("method") == "POST":
+                headers["Content-Type"] = "application/json"
+            status, data = _get(url, headers,
+                                 body=opts.get("body"),
+                                 method=opts.get("method", "GET"))
+            if status == 200 and (not isinstance(data, dict) or data.get("ok") is not False):
                 identity, access = _parse_cookie_identity(domain, data)
                 results.append(Result(domain, "Cookie session", cookie_names, "valid",
                                       identity, access, data))
             else:
-                results.append(Result(domain, "Cookie session", cookie_names, "invalid",
-                                      "—", f"HTTP {status} at {url}", data))
-        else:
-            results.append(Result(domain, "Cookie session", cookie_names, "info",
-                                  "—", f"{len(cookies)} cookie(s) — key cookie missing", {}))
+                err = ""
+                if isinstance(data, dict):
+                    err = str(data.get("error") or data.get("message") or f"HTTP {status}")
+                else:
+                    err = f"HTTP {status}"
+                stat = "invalid" if status in (401, 403) else "error"
+                results.append(Result(domain, "Cookie session", cookie_names, stat,
+                                      "—", err[:80], data))
     else:
-        results.append(Result(domain, "Cookie session", cookie_names, "info",
-                              "—", f"{len(cookies)} cookie(s) (use --browser to open)", {}))
+        results.append(_test_generic_cookie_session(domain, cookies, jar, cookie_names))
 
     if browser:
         _open_browser_session(domain, cookies)
@@ -421,19 +486,40 @@ def test_cookie_session(domain: str, cookies: list[dict], *, browser: bool) -> l
 
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36"
 
-# domain → (test_url, key_cookie_name)
-_DOMAIN_TESTS = {
-    "github.com":               ("https://api.github.com/user",              "_gh_sess"),
-    ".github.com":              ("https://api.github.com/user",              "_gh_sess"),
-    "accounts.google.com":      ("https://www.googleapis.com/oauth2/v3/userinfo", "SAPISID"),
-    ".google.com":              ("https://www.googleapis.com/oauth2/v3/userinfo", "SAPISID"),
-    "app.slack.com":            ("https://slack.com/api/auth.test",           "d"),
-    ".slack.com":               ("https://slack.com/api/auth.test",           "d"),
-    "discord.com":              ("https://discord.com/api/v10/users/@me",     "__dcfduid"),
-    ".discord.com":             ("https://discord.com/api/v10/users/@me",     "__dcfduid"),
-    "twitter.com":              ("https://api.twitter.com/2/users/me",        "auth_token"),
-    ".twitter.com":             ("https://api.twitter.com/2/users/me",        "auth_token"),
-    "x.com":                    ("https://api.twitter.com/2/users/me",        "auth_token"),
+# domain → (test_url, key_cookie, opts)
+# opts keys:
+#   no_redirect (bool) — compare 200-vs-redirect rather than parsing JSON
+#   method (str), body (bytes) — for POST API endpoints
+_DOMAIN_TESTS: dict[str, tuple] = {
+    # GitHub: API rejects web cookies; use web endpoint + redirect check
+    "github.com":           ("https://github.com/settings",                       "user_session",  {"no_redirect": True}),
+    ".github.com":          ("https://github.com/settings",                       "user_session",  {"no_redirect": True}),
+    # Google: OAuth userinfo needs a Bearer token; myaccount redirect-checks the web session
+    "accounts.google.com":  ("https://myaccount.google.com/",                     "SAPISID",       {"no_redirect": True}),
+    ".google.com":          ("https://myaccount.google.com/",                     "SAPISID",       {"no_redirect": True}),
+    # Slack: d cookie IS the token — auth.test POST accepts it directly
+    "app.slack.com":        ("https://slack.com/api/auth.test",                   "d",             {"method": "POST", "body": b"{}"}),
+    ".slack.com":           ("https://slack.com/api/auth.test",                   "d",             {"method": "POST", "body": b"{}"}),
+    # Discord: auth token lives in localStorage not cookies; redirect-check is best effort
+    "discord.com":          ("https://discord.com/channels/@me",                  "__dcfduid",     {"no_redirect": True}),
+    ".discord.com":         ("https://discord.com/channels/@me",                  "__dcfduid",     {"no_redirect": True}),
+    # Twitter/X: OAuth API rejects web cookies; redirect-check the web session
+    "twitter.com":          ("https://twitter.com/home",                          "auth_token",    {"no_redirect": True}),
+    ".twitter.com":         ("https://twitter.com/home",                          "auth_token",    {"no_redirect": True}),
+    "x.com":                ("https://x.com/home",                                "auth_token",    {"no_redirect": True}),
+    ".x.com":               ("https://x.com/home",                                "auth_token",    {"no_redirect": True}),
+    # LinkedIn: li_at is the session cookie; /feed/ redirects to login when unauthenticated
+    "linkedin.com":         ("https://www.linkedin.com/feed/",                    "li_at",         {"no_redirect": True}),
+    ".linkedin.com":        ("https://www.linkedin.com/feed/",                    "li_at",         {"no_redirect": True}),
+    "www.linkedin.com":     ("https://www.linkedin.com/feed/",                    "li_at",         {"no_redirect": True}),
+    # Reddit: /settings/ requires login
+    "reddit.com":           ("https://www.reddit.com/settings/",                  "token_v2",      {"no_redirect": True}),
+    ".reddit.com":          ("https://www.reddit.com/settings/",                  "token_v2",      {"no_redirect": True}),
+    "www.reddit.com":       ("https://www.reddit.com/settings/",                  "token_v2",      {"no_redirect": True}),
+    # Notion: token_v2 cookie authenticates the API directly
+    "notion.so":            ("https://www.notion.so/api/v3/loadUserContent",      "token_v2",      {"method": "POST", "body": b"{}"}),
+    ".notion.so":           ("https://www.notion.so/api/v3/loadUserContent",      "token_v2",      {"method": "POST", "body": b"{}"}),
+    "www.notion.so":        ("https://www.notion.so/api/v3/loadUserContent",      "token_v2",      {"method": "POST", "body": b"{}"}),
 }
 
 def _strip_sub(domain: str) -> str:
@@ -444,8 +530,39 @@ def _strip_sub(domain: str) -> str:
     return domain
 
 def _parse_cookie_identity(domain: str, data: dict) -> tuple[str, str]:
-    # Best-effort extraction from common API response shapes
-    for key in ("login", "username", "name", "email", "screen_name", "user"):
+    if not isinstance(data, dict):
+        return "authenticated", f"{domain} session valid"
+
+    # Reddit /api/v1/me.json
+    if "name" in data and "comment_karma" in data:
+        karma = data.get("link_karma", 0) + data.get("comment_karma", 0)
+        return data["name"], f"karma: {karma}"
+
+    # LinkedIn voyager/api/me — firstName/lastName may be strings or {"text": ...} dicts
+    if "miniProfile" in data:
+        mp = data["miniProfile"]
+        def _txt(v):
+            return v.get("text", "") if isinstance(v, dict) else (v or "")
+        name = f"{_txt(mp.get('firstName'))} {_txt(mp.get('lastName'))}".strip()
+        return name or mp.get("publicIdentifier", "authenticated"), f"{domain} session valid"
+
+    # Notion loadUserContent
+    if "recordMap" in data:
+        users = data.get("recordMap", {}).get("notion_user", {})
+        if users:
+            uval = next(iter(users.values()), {}).get("value", {})
+            name  = uval.get("name", "")
+            email = uval.get("email", "")
+            return (name or email or "authenticated"), f"{domain} session valid"
+
+    # Slack auth.test (ok + user + team)
+    if data.get("ok") and "user" in data:
+        user = data["user"]
+        team = data.get("team", "")
+        return (f"{user} @ {team}" if team else user), f"{domain} session valid"
+
+    # Generic fallback
+    for key in ("login", "username", "name", "email", "screen_name", "user", "handle"):
         if isinstance(data.get(key), str):
             return data[key], f"{domain} session valid"
     return "authenticated", f"{domain} session valid"
