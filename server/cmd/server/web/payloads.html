@@ -562,44 +562,56 @@ details[open] summary::before{content:"▼ "}
     <div class="section-body">
       <p style="font-size:13px;color:var(--dim);margin-bottom:16px">Validate captured credentials and cookie sessions against live services using <code style="font-family:var(--mono);font-size:12px;color:var(--text)">sessiontest.py</code>. <a href="/guide/sessiontest" style="color:var(--accent)">Guide →</a></p>
 
-      <div class="cmd-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="os-tabs" style="margin-bottom:0">
-          <button class="os-tab active" id="st-tab-win"   onclick="setSTOS('win')">Windows</button>
-          <button class="os-tab"        id="st-tab-mac"   onclick="setSTOS('mac')">macOS</button>
-          <button class="os-tab"        id="st-tab-linux" onclick="setSTOS('linux')">Linux</button>
-        </div>
+      <div class="hint-box" style="margin-bottom:14px">
+        <strong style="color:var(--green)">✓ Auto-detection enabled:</strong> The script automatically finds the latest report ZIP in your Downloads folder and extracts the CSV. Just run <code style="font-family:var(--mono);font-size:11px">python3 sessiontest.py</code> with no arguments.
       </div>
 
-      <div class="fields" style="margin-bottom:14px">
-        <div class="field field-wide">
-          <label>CSV file</label>
-          <input type="text" id="st-csv" placeholder="bb_results.csv (auto-detected)" oninput="updateSTCommand()">
-        </div>
-        <div class="field field-sm">
-          <label>Timeout (s)</label>
-          <input type="number" id="st-timeout" value="10" min="1" oninput="updateSTCommand()">
-        </div>
-        <div class="field field-sm">
-          <label>Delay (s)</label>
-          <input type="number" id="st-delay" value="0.3" min="0" step="0.1" oninput="updateSTCommand()">
-        </div>
-      </div>
+      <details style="margin-bottom:14px">
+        <summary>Advanced options</summary>
+        <div style="margin-top:14px">
+          <div class="cmd-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div class="os-tabs" style="margin-bottom:0">
+              <button class="os-tab active" id="st-tab-win"   onclick="setSTOS('win')">Windows</button>
+              <button class="os-tab"        id="st-tab-mac"   onclick="setSTOS('mac')">macOS</button>
+              <button class="os-tab"        id="st-tab-linux" onclick="setSTOS('linux')">Linux</button>
+            </div>
+          </div>
 
-      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px">
-        <label class="flag-cb"><input type="checkbox" id="st-browser" onchange="updateSTCommand()"> --browser</label>
-        <label class="flag-cb"><input type="checkbox" id="st-no-ssl"  onchange="updateSTCommand()"> --no-verify-ssl</label>
-        <label class="flag-cb"><input type="checkbox" id="st-json"    onchange="updateSTCommand()"> --json</label>
-      </div>
+          <div class="group-label" style="margin-bottom:10px">Optional parameters</div>
+          <div class="fields" style="margin-bottom:14px">
+            <div class="field field-wide">
+              <label for="st-csv">CSV file <span style="color:var(--muted)">(leave blank for auto-detection)</span></label>
+              <input type="text" id="st-csv" placeholder="bb_results.csv or path/to/file.csv" oninput="updateSTCommand()">
+            </div>
+            <div class="field field-sm">
+              <label for="st-timeout">Timeout (s)</label>
+              <input type="number" id="st-timeout" value="10" min="1" oninput="updateSTCommand()">
+            </div>
+            <div class="field field-sm">
+              <label for="st-delay">Delay (s)</label>
+              <input type="number" id="st-delay" value="0.3" min="0" step="0.1" oninput="updateSTCommand()">
+            </div>
+          </div>
 
-      <div class="cmd-wrap">
-        <div class="cmd-bar">
-          <span class="cmd-label" id="st-cmd-label">Run from repo root</span>
-          <button class="btn btn-green" onclick="copySTCommand()">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"/></svg>Copy
-          </button>
+          <div class="group-label" style="margin-bottom:10px">Flags</div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px">
+            <label class="flag-cb"><input type="checkbox" id="st-browser" onchange="updateSTCommand()"> --browser</label>
+            <label class="flag-cb"><input type="checkbox" id="st-no-ssl"  onchange="updateSTCommand()"> --no-verify-ssl</label>
+            <label class="flag-cb"><input type="checkbox" id="st-json"    onchange="updateSTCommand()"> --json</label>
+          </div>
+
+          <div class="group-label" style="margin-bottom:10px">Generated command</div>
+          <div class="cmd-wrap">
+            <div class="cmd-bar">
+              <span class="cmd-label" id="st-cmd-label">Run from repo root</span>
+              <button class="btn btn-green" onclick="copySTCommand()">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25v-7.5z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"/></svg>Copy
+              </button>
+            </div>
+            <div class="cmd-code" id="st-cmd-output"></div>
+          </div>
         </div>
-        <div class="cmd-code" id="st-cmd-output"></div>
-      </div>
+      </details>
     </div>
   </div>
 

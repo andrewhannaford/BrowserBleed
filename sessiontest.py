@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 sessiontest.py — Test captured BrowserBleed credentials against live services.
 
@@ -13,21 +14,28 @@ Usage:
     python3 sessiontest.py --json                    # machine-readable output
     python3 sessiontest.py --no-verify-ssl           # skip TLS cert verification
 
+Environment variables:
+    BB_RESULTS_CSV=/path/to/results.csv             # explicit path (checked first)
+
 For authorized red team use only.
 """
 
 import argparse
 import base64
 import csv
+import glob
 import json
 import os
 import ssl
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from collections import defaultdict
+from datetime import datetime
 
 # ── ANSI colours ──────────────────────────────────────────────────────────────
 
@@ -939,14 +947,84 @@ def _dispatch(label: str, service: str, value: str, browser: bool) -> list[Resul
 
 # ── CSV reading ───────────────────────────────────────────────────────────────
 
+def _extract_csv_from_zip(zip_path: str) -> str | None:
+    """Extract CSV from a BrowserBleed report zip and return its path."""
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            csv_files = [f for f in z.namelist() if f.endswith('.csv')]
+            if not csv_files:
+                return None
+            csv_file = csv_files[0]
+            # Prevent path traversal: reject paths with .. or absolute paths
+            if '..' in csv_file or os.path.isabs(csv_file):
+                return None
+            temp_dir = tempfile.gettempdir()
+            z.extract(csv_file, temp_dir)
+            extracted_path = os.path.join(temp_dir, csv_file)
+            return extracted_path
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, IOError):
+        return None
+    except Exception as e:
+        if not os.environ.get("BB_QUIET"):
+            print(yellow(f"  Warning: Failed to extract zip: {e}"))
+        return None
+
+
+def _find_latest_report_zip() -> str | None:
+    """Find the most recent BrowserBleed report zip in ~/Downloads."""
+    home = os.path.expanduser("~")
+    downloads = os.path.join(home, "Downloads")
+    if not os.path.exists(downloads):
+        return None
+
+    pattern = os.path.join(downloads, "*_????-??-??.zip")
+    zips = glob.glob(pattern)
+    if not zips:
+        return None
+
+    try:
+        return max(zips, key=os.path.getmtime)
+    except (OSError, ValueError):
+        # File deleted between glob and max, or no valid files
+        return None
+
+
 def _find_csv() -> str | None:
+    # 1. Check BB_RESULTS_CSV environment variable
+    env_path = os.environ.get("BB_RESULTS_CSV")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    # 2. Check current directory and script directory
     candidates = [
         "bb_results.csv",
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "bb_results.csv"),
     ]
+
+    # 3. Check for recently extracted CSVs in ~/Downloads matching pattern *_YYYY-MM-DD.csv
+    home = os.path.expanduser("~")
+    if home:
+        downloads = os.path.join(home, "Downloads")
+        if os.path.exists(downloads):
+            pattern = os.path.join(downloads, "*_????-??-??.csv")
+            csvs = glob.glob(pattern)
+            if csvs:
+                latest_csv = max(csvs, key=os.path.getmtime)
+                candidates.insert(0, latest_csv)
+
     for p in candidates:
         if os.path.exists(p):
             return p
+
+    # 4. Look for the most recent zip in ~/Downloads and extract it
+    latest_zip = _find_latest_report_zip()
+    if latest_zip:
+        csv_path = _extract_csv_from_zip(latest_zip)
+        if csv_path and os.path.exists(csv_path):
+            if not os.environ.get("BB_QUIET"):
+                print(cyan(f"  Auto-extracted from {os.path.basename(latest_zip)}"))
+            return csv_path
+
     return None
 
 
@@ -967,6 +1045,11 @@ BANNER = """\
 
 def main():
     global _timeout, _ssl_ctx
+
+    # Ensure UTF-8 output on Windows
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
     parser = argparse.ArgumentParser(
         description="Test BrowserBleed captured credentials against live services",

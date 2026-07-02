@@ -99,14 +99,14 @@ class TestDispatch(unittest.TestCase):
         with patch.object(st, "test_discord") as mock:
             mock.return_value = st.Result("Discord", "l", "v", "invalid", "—", "401")
             self._dispatch("Discord token", "Discord",
-                           "MjcyOTQyODcxODE5MTkwMjcz.GFwbns.UwGmTuZQCe1Ysns495CtoVSACB1")
+                           "MjcyOTQyODcxODE5MTkwMjcz.EXAMPLE_TOKEN_XXXXXXXXXXXXXXXXXXXX")
         mock.assert_called_once()
 
     def test_discord_service_m_prefix_routes(self):
         with patch.object(st, "test_discord") as mock:
             mock.return_value = st.Result("Discord", "l", "v", "invalid", "—", "401")
             self._dispatch("Bearer token", "Discord",
-                           "MTIyNDM4NTcyNTk0OTI4NDQwMw.VnnAZKfPleve8cA5satsuCQZWydKi2")
+                           "MTIyNDM4NTcyNTk0OTI4NDQwMw.EXAMPLE_FAKE_TOKEN_XXXXXXXXXXX")
         mock.assert_called_once()
 
     # ── Spotify ───────────────────────────────────────────────────────────────

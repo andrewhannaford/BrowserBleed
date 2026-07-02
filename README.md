@@ -344,6 +344,92 @@ Supported checks:
 
 ---
 
+## Validating Extracted Credentials
+
+After running BrowserBleed and collecting credentials, use **`sessiontest.py`** to validate them against live services:
+
+```bash
+# Simplest case — auto-finds the latest report ZIP in ~/Downloads
+python3 sessiontest.py
+
+# Explicit CSV file
+python3 sessiontest.py path/to/bb_results.csv
+
+# Test with browser sessions (opens Playwright for cookie validation)
+python3 sessiontest.py --browser
+
+# Output as JSON for parsing
+python3 sessiontest.py --json
+
+# Adjust timeout or delay between requests
+python3 sessiontest.py --timeout 15 --delay 0.5
+
+# Skip TLS verification
+python3 sessiontest.py --no-verify-ssl
+
+# Combine flags
+python3 sessiontest.py --browser --json --timeout 20
+```
+
+### How sessiontest.py works
+
+sessiontest.py tests each credential / session against the actual service (GitHub, Google, Anthropic, AWS, Slack, Discord, Stripe, HuggingFace, etc.). It reports:
+
+- **Identity** — Which user/account the credential belongs to
+- **Status** — `valid`, `expired`, `invalid`, or `error`
+- **Access level** — What scopes / permissions the credential grants
+- **Raw response** — Full API response for inspection
+
+Tested services include:
+
+| Service | Method |
+|---------|--------|
+| GitHub | `api.github.com/user` + org check |
+| Google OAuth2 | `oauth2.googleapis.com/tokeninfo` + userinfo |
+| Anthropic | `api.anthropic.com/v1/models` (API key test) and `/api/auth/session` (web session) |
+| OpenAI | `api.openai.com/v1/models` |
+| Slack | `slack.com/api/auth.test` |
+| Discord | `discord.com/api/v10/users/@me` |
+| Stripe | `api.stripe.com/v1/account` |
+| AWS | `sts.amazonaws.com` (SigV4-signed GetCallerIdentity) |
+| HuggingFace | `huggingface.co/api/whoami-v2` |
+| Microsoft Graph | `graph.microsoft.com/v1.0/me` |
+| Spotify | `api.spotify.com/v1/me` |
+| npm | `registry.npmjs.org/-/whoami` |
+| SendGrid | `api.sendgrid.com/v3/user/profile` |
+| LinkedIn | Redirect-check via `li_at` cookie |
+| Twitter/X | Redirect-check via `auth_token` cookie |
+| Google session (SID) | Redirect-check against myaccount.google.com |
+| JWT / JWE | Local exp claim validation |
+
+### Auto-detection
+
+sessiontest.py automatically searches for the CSV in this priority order:
+
+1. `BB_RESULTS_CSV` environment variable (if set)
+2. Most recent `*_YYYY-MM-DD.csv` in `~/Downloads`
+3. `bb_results.csv` in current directory
+4. `bb_results.csv` in script directory
+5. Most recent `*_YYYY-MM-DD.zip` in `~/Downloads` (auto-extracts)
+
+No manual extraction or file path needed. The simplest workflow: export the ZIP to Downloads, then just run `python3 sessiontest.py`.
+
+### Environment variables
+
+```bash
+# Explicitly specify CSV path (checked first before auto-detection)
+export BB_RESULTS_CSV=/path/to/results.csv
+python3 sessiontest.py
+
+# Suppress auto-extraction message
+export BB_QUIET=1
+python3 sessiontest.py
+```
+
+See [`SESSIONTEST_USAGE.md`](SESSIONTEST_USAGE.md) for complete usage guide.
+
+---
+
 ## Report Server
 
 BrowserBleed includes a self-hosted report server (`server/`) for receiving results, managing payloads, and delivering them to targets. When `--exfil` is used, BrowserBleed POSTs the `.txt` and `.csv` to the server after the run; the report URL is appended to `bb_results.txt`.
