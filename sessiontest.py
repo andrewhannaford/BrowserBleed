@@ -36,6 +36,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 try:
@@ -1250,39 +1251,40 @@ def main():
         print(f"  Testing {bold(str(len(unique_creds)))} unique credential(s)  +  "
               f"{bold(str(len(cookies_by_domain)))} cookie domain(s)…\n")
 
-    # API credentials
-    for row in unique_creds:
+    # Test credentials in parallel for speed (8 workers max to avoid rate limiting)
+    def test_credential(row):
         label   = row.get("label", "")
         service = row.get("service", "")
         value   = row.get("value", "").strip()
 
-        # AWS: skip bare access key if we have a paired secret
         if value in aws_keys:
             secret = aws_keys[value]
             if secret:
-                r = test_aws(value, secret, label)
-                all_results.append(r)
+                return [test_aws(value, secret, label)]
             else:
-                all_results.append(Result("AWS", label, value[:16] + "…", "info",
-                                          "—", "secret key not found — cannot sign request", {}))
-            n_shown += 1
-            if not args.json:
-                _print_progress(n_shown, total, r if secret else all_results[-1])
-            time.sleep(args.delay)
-            continue
+                return [Result("AWS", label, value[:16] + "…", "info",
+                              "—", "secret key not found — cannot sign request", {})]
+        return _dispatch(label, service, value, False)
 
-        results = _dispatch(label, service, value, False)
-        for r in results:
-            all_results.append(r)
-            n_shown += 1
-            if not args.json:
-                _print_progress(n_shown, total, r)
-        if results:
-            time.sleep(args.delay)
-        else:
-            n_skipped += 1
+    # API credentials - parallel testing
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(test_credential, row): row for row in unique_creds}
+        for future in as_completed(futures):
+            try:
+                results = future.result()
+                for r in results:
+                    all_results.append(r)
+                    n_shown += 1
+                    if not args.json:
+                        _print_progress(n_shown, total, r)
+                if not results:
+                    n_skipped += 1
+            except Exception as e:
+                if not args.json:
+                    print(f"  {red(f'! error   ')}  {str(e)[:50]}")
+                n_skipped += 1
 
-    # Cookie sessions
+    # Cookie sessions (sequential, usually just 1)
     for domain, cookies in cookies_by_domain.items():
         if not domain:
             continue
@@ -1325,9 +1327,16 @@ def main():
             print(red("[!] Selenium not available. Install with: pip install selenium"))
             return
 
-        valid_results = [r for r in all_results if r.status == "valid"]
+        # Only browser-testable services (cookies, OAuth, web sessions)
+        BROWSER_SERVICES = {"LinkedIn", "GitHub", "Google", "Discord", "Slack", "Anthropic",
+                           "Spotify", "Twitter", "Microsoft", "AWS", "OpenAI"}
+
+        valid_results = [r for r in all_results
+                        if r.status == "valid" and r.service in BROWSER_SERVICES]
+
         if not valid_results:
-            print(yellow("[!] No valid credentials to open in browser."))
+            print(yellow("[!] No browser-testable valid credentials found."))
+            print(dim("   (API keys, JWTs, and tokens are tested via API, not browser)"))
             return
 
         print(green(f"[+] Opening {len(valid_results)} authenticated browser session(s)…\n"))
