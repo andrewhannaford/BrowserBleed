@@ -135,7 +135,7 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "Slack token":          re.compile(rb"xox[baprs]-[A-Za-z0-9\-]{10,}"),
     "GitHub token":         re.compile(rb"gh[pousr]_[A-Za-z0-9]{36,}"),
     "Discord token":        re.compile(rb"[MN][A-Za-z0-9]{23}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27}"),
-    "AWS Access Key":       re.compile(rb"A(?:KIA|SIA|ROA|IDA)[A-Z0-9]{16}"),
+    "AWS Access Key":       re.compile(rb"(?<![A-Z0-9])(A(?:KIA|SIA|ROA|IDA)[A-Z0-9]{16})(?![A-Z0-9])"),
     "Stripe key":           re.compile(rb"sk_(?:live|test)_[A-Za-z0-9]{24,}"),
     "npm token":            re.compile(rb"npm_[A-Za-z0-9]{36}"),
     "HuggingFace token":    re.compile(rb"hf_[A-Za-z0-9]{34,}"),
@@ -167,11 +167,13 @@ _NOISE_EXACT: frozenset[str] = frozenset([
 ])
 
 _HIT_TIER: dict[str, int] = {
-    "AWS Access Key": 0, "Anthropic API key": 0,
-    "SSH private key": 0, "Stripe key": 0,
-    "Vault token": 0, "GitHub token": 0,
-    "Slack token": 0, "Discord token": 0,
-    "npm token": 0, "HuggingFace token": 0,
+    "AWS Access Key": 0, "Anthropic API key": 0, "Anthropic API Key": 0,
+    "SSH private key": 0, "SSH Private Key": 0,
+    "Stripe key": 0, "Stripe Secret Key": 0,
+    "Vault token": 0, "Vault Token": 0,
+    "GitHub token": 0, "Slack token": 0, "Discord token": 0,
+    "npm token": 0, "npm Token": 0,
+    "HuggingFace token": 0, "HuggingFace Token": 0,
     "Password (POST body)": 1, "Password (JSON/API)": 1,
     "JWT token": 1, "Bearer token": 1, "Authorization header": 1,
     "Google SAPISID": 1, "OAuth access_token": 1, "OAuth refresh_token": 1,
@@ -1382,6 +1384,46 @@ def verify_aws(access_key: str) -> dict:
         return {"valid": None, "reason": str(ex)}
 
 
+def verify_discord(token: str) -> dict:
+    status, data = _http_get(
+        "https://discord.com/api/v10/users/@me",
+        headers={"Authorization": token},
+    )
+    if status == 200:
+        return {"valid": True, "user": data.get("username", "?"), "id": data.get("id", "?")}
+    return {"valid": False, "reason": f"HTTP {status}"}
+
+
+def verify_linkedin(token: str) -> dict:
+    import urllib.request as _ur
+    class _NoRedir(_ur.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            return None
+    opener = _ur.build_opener(_NoRedir())
+    req = _ur.Request(
+        "https://www.linkedin.com/feed/",
+        headers={"Cookie": f"li_at={token}", "User-Agent":
+                 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
+    )
+    try:
+        with opener.open(req, timeout=6) as r:
+            if r.status == 200:
+                return {"valid": True, "reason": "li_at cookie accepted (200 vs redirect unauthenticated)"}
+        return {"valid": None, "reason": f"HTTP {r.status}"}
+    except Exception as e:
+        return {"valid": None, "reason": str(e)}
+
+
+def verify_sendgrid(token: str) -> dict:
+    status, data = _http_get(
+        "https://api.sendgrid.com/v3/user/profile",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 200:
+        return {"valid": True, "username": data.get("username", "?"), "email": data.get("email", "?")}
+    return {"valid": False, "reason": f"HTTP {status}"}
+
+
 def verify_hit(label: str, value: str, service: str) -> dict | None:
     raw = value.split()[-1] if value.startswith("Bearer ") else value
     if "Google OAuth2" in service or raw.startswith("ya29."):
@@ -1392,6 +1434,12 @@ def verify_hit(label: str, value: str, service: str) -> dict | None:
         return verify_slack(raw)
     if "Anthropic" in service:
         return verify_anthropic(raw)
+    if "Discord" in service:
+        return verify_discord(raw)
+    if "LinkedIn" in service:
+        return verify_linkedin(raw)
+    if "SendGrid" in service or label == "Sendgrid token":
+        return verify_sendgrid(raw)
     if "OpenAI" in service or raw.startswith("sk-"):
         return verify_openai(raw)
     if "Stripe" in service or raw.startswith("sk_live_") or raw.startswith("sk_test_"):

@@ -167,6 +167,52 @@ def test_github(value: str, label: str) -> Result:
                   "—", f"HTTP {status}", data)
 
 
+def test_linkedin_li_at(value: str, label: str) -> Result:
+    """Test a LinkedIn li_at cookie via redirect-check against /feed/."""
+    cookie_val = value.partition("=")[2] if value.startswith("li_at=") else value
+    jar = f"li_at={cookie_val}"
+    status_auth = _status_only("https://www.linkedin.com/feed/", {"Cookie": jar, "User-Agent": _UA})
+    status_anon = _status_only("https://www.linkedin.com/feed/", {"User-Agent": _UA})
+    if status_auth == 200 and status_anon != 200:
+        return Result("LinkedIn", label, value[:16] + "…", "valid",
+                      "authenticated", f"li_at → 200 vs {status_anon} without — session active", {})
+    if status_auth == 0:
+        return Result("LinkedIn", label, value[:16] + "…", "error", "—", "connection failed", {})
+    return Result("LinkedIn", label, value[:16] + "…", "info",
+                  "—", f"li_at cookie: HTTP {status_auth}/{status_anon} — auth inconclusive", {})
+
+
+def test_twitter_auth_token(value: str, label: str) -> Result:
+    """Test a Twitter/X auth_token cookie via redirect-check against /home."""
+    cookie_val = value.partition("=")[2] if value.startswith("auth_token=") else value
+    jar = f"auth_token={cookie_val}"
+    status_auth = _status_only("https://x.com/home", {"Cookie": jar, "User-Agent": _UA})
+    status_anon = _status_only("https://x.com/home", {"User-Agent": _UA})
+    if status_auth == 200 and status_anon != 200:
+        return Result("Twitter / X", label, value[:16] + "…", "valid",
+                      "authenticated", f"auth_token → 200 vs {status_anon} without — session active", {})
+    if status_auth == 0:
+        return Result("Twitter / X", label, value[:16] + "…", "error", "—", "connection failed", {})
+    return Result("Twitter / X", label, value[:16] + "…", "info",
+                  "—", f"auth_token cookie: HTTP {status_auth}/{status_anon} — auth inconclusive", {})
+
+
+def test_sendgrid(value: str, label: str) -> Result:
+    """Test a SendGrid API key against /v3/user/profile."""
+    status, data = _get(
+        "https://api.sendgrid.com/v3/user/profile",
+        {"Authorization": f"Bearer {value}"},
+    )
+    if status == 200:
+        username = data.get("username", "?")
+        email    = data.get("email", "")
+        identity = f"{username} <{email}>" if email else username
+        return Result("SendGrid", label, value[:16] + "…", "valid",
+                      identity, "SendGrid API key confirmed", data)
+    stat = "invalid" if status in (401, 403) else "error"
+    return Result("SendGrid", label, value[:16] + "…", stat, "—", f"HTTP {status}", data)
+
+
 def test_discord(value: str, label: str) -> Result:
     """Test a Discord user token against /api/v10/users/@me."""
     status, data = _get(
@@ -729,8 +775,8 @@ def _dispatch(label: str, service: str, value: str, browser: bool) -> list[Resul
                                   and len(v.split(".")[0]) >= 10):
         return [test_discord(v, label)]
 
-    # Spotify access token (BQ prefix)
-    if v.startswith(("BQA", "AQA", "BQB")) or "spotify" in service.lower():
+    # Spotify access token — BQA is the Spotify-specific prefix; AQA is too broad
+    if v.startswith("BQA") or "spotify" in service.lower():
         return [test_spotify(v, label)]
 
     # Microsoft Graph / Azure
@@ -781,6 +827,32 @@ def _dispatch(label: str, service: str, value: str, browser: bool) -> list[Resul
     # npm auth token (typically 36-char UUID or base64)
     if "npm" in lo:
         return [test_npm(v, label)]
+
+    # SendGrid API key
+    if lo == "sendgrid token" or v.startswith("SG."):
+        return [test_sendgrid(v, label)]
+
+    # LinkedIn li_at session cookie
+    if lo == "linkedin li_at":
+        return [test_linkedin_li_at(v, label)]
+
+    # Twitter/X auth_token session cookie
+    if lo == "twitter auth_token":
+        return [test_twitter_auth_token(v, label)]
+
+    # Anthropic session label (direct 20111... capture, distinct from Session token label)
+    if lo == "anthropic session":
+        return [test_anthropic_session(v, label)]
+
+    # Session key — route by service
+    if lo == "session key":
+        svc_lo = service.lower()
+        if "anthropic" in svc_lo:
+            return [test_anthropic_session(v, label)]
+        if "google" in svc_lo:
+            return [test_google_oauth(v, label)]
+        return [Result(service or "Unknown", label, v[:16] + "…", "info",
+                       "—", "session key — cookie name not identifiable from context", {})]
 
     # Session ID routing based on service label
     if lo == "session id":
@@ -859,7 +931,7 @@ def _dispatch(label: str, service: str, value: str, browser: bool) -> list[Resul
             return [test_slack(v, label)]
         if "discord" in svc_lo and v.count(".") == 2 and v[:1] in ("M", "N"):
             return [test_discord(v, label)]
-        if "spotify" in svc_lo or v.startswith(("BQA", "AQA")):
+        if "spotify" in svc_lo or v.startswith("BQA"):
             return [test_spotify(v, label)]
 
     return []  # no tester matched

@@ -625,11 +625,16 @@ _DOMAIN_SVC: list[tuple[str, str]] = [
     ("instagram.com",                   "Instagram"),
     ("app.datadoghq.com",               "Datadog"),
     ("api.datadoghq.com",               "Datadog"),
+    ("datadoghq.com",                   "Datadog"),
     ("registry.npmjs.org",              "npm"),
+    ("npmjs.com",                       "npm"),
     ("api.cloudflare.com",              "Cloudflare"),
+    ("cloudflare.com",                  "Cloudflare"),
     ("app.terraform.io",                "HashiCorp Cloud"),
+    ("cloud.hashicorp.com",             "HashiCorp Cloud"),
     ("vault.hashicorp.com",             "HashiCorp Vault"),
     ("api.sendgrid.com",                "SendGrid"),
+    ("sendgrid.com",                    "SendGrid"),
     ("api.hubspot.com",                 "HubSpot"),
 ]
 
@@ -1169,6 +1174,25 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
     v = value[7:] if value.startswith("Bearer ") else value
     if v is value and value.startswith("Basic "):
         v = value[6:]
+
+    # ── Label-based shortcuts — checked first, matching Windows/Linux order ──
+    if label == "AWS Access Key":      return "AWS"
+    if label == "Anthropic API Key":   return "Anthropic / Claude"
+    if label == "Stripe Secret Key":   return "Stripe"
+    if label == "npm Token":           return "npm"
+    if label == "HuggingFace Token":   return "HuggingFace"
+    if label == "Vault Token":         return "HashiCorp Vault"
+    if label == "SSH Private Key":     return "SSH"
+    if label == "Google SAPISID":      return "Google (YouTube / Gmail)"
+    if label == "Discord token":       return "Discord"
+    if label == "Slack token":         return "Slack"
+    if label == "GitHub token":        return "GitHub"
+    if label == "Anthropic session":   return "Anthropic / Claude"
+    if label == "LinkedIn li_at":      return "LinkedIn"
+    if label == "Twitter auth_token":  return "Twitter / X"
+    if label == "Sendgrid token":      return "SendGrid"
+
+    # ── Exact value prefix matches ────────────────────────────────────────────
     if v.startswith("ya29."):
         return "Google OAuth2"
     if v[:4] in ("QUFL", "QUJF", "QUEy", "QUFF"):
@@ -1184,24 +1208,14 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
     # sk-ant- must be checked before sk- to avoid misidentifying Anthropic keys as OpenAI
     if v.startswith("sk-ant-"): return "Anthropic / Claude"
     if v.startswith("sk-"):     return "OpenAI"
-    if v.startswith("glpat-"): return "GitLab"
-    if v.startswith("dp."):    return "DigitalOcean"
-    if v.startswith("pat_"):   return "Notion"
-    if label == "Google SAPISID":    return "Google (YouTube / Gmail)"
-    if label == "Discord token":     return "Discord"
-    if label == "Slack token":       return "Slack"
-    if label == "GitHub token":      return "GitHub"
-    if label == "AWS Access Key":    return "AWS"
-    if label == "Stripe Secret Key": return "Stripe"
-    if label == "npm Token":         return "npm"
-    if label == "HuggingFace Token": return "HuggingFace"
-    if label == "Vault Token":       return "HashiCorp Vault"
-    if label == "Anthropic API Key": return "Anthropic / Claude"
-    if label == "SSH Private Key":   return "SSH"
-    if label == "Anthropic session":   return "Anthropic / Claude"
-    if label == "LinkedIn li_at":      return "LinkedIn"
-    if label == "Twitter auth_token":  return "Twitter / X"
-    if label == "Sendgrid token":      return "SendGrid"
+    if v.startswith("glpat-"):  return "GitLab"
+    if v.startswith("dp."):     return "DigitalOcean"
+    if v.startswith("pat_"):    return "Notion"
+    if v.startswith("hf_"):     return "HuggingFace"
+    if v.startswith("hvs."):    return "HashiCorp Vault"
+    if v.startswith("npm_"):    return "npm"
+    if v.startswith("sk_live_") or v.startswith("sk_test_"): return "Stripe"
+
     if re.match(r"^20111[A-Za-z0-9\-_]{20,}$", v):
         return "Anthropic / Claude"
     if label == "JWT token" or (v.startswith("eyJ") and v.count(".") == 2):
@@ -1379,6 +1393,46 @@ def verify_aws(token: str) -> dict:
     return {"valid": False, "reason": "invalid AWS key format"}
 
 
+def verify_discord(token: str) -> dict:
+    status, data = _http_get(
+        "https://discord.com/api/v10/users/@me",
+        headers={"Authorization": token},
+    )
+    if status == 200:
+        return {"valid": True, "user": data.get("username", "?"), "id": data.get("id", "?")}
+    return {"valid": False, "reason": f"HTTP {status}"}
+
+
+def verify_linkedin(token: str) -> dict:
+    import urllib.request as _ur
+    class _NoRedir(_ur.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            return None
+    opener = _ur.build_opener(_NoRedir())
+    req = _ur.Request(
+        "https://www.linkedin.com/feed/",
+        headers={"Cookie": f"li_at={token}", "User-Agent":
+                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
+    )
+    try:
+        with opener.open(req, timeout=6) as r:
+            if r.status == 200:
+                return {"valid": True, "reason": "li_at cookie accepted (200 vs redirect unauthenticated)"}
+        return {"valid": None, "reason": f"HTTP {r.status}"}
+    except Exception as e:
+        return {"valid": None, "reason": str(e)}
+
+
+def verify_sendgrid(token: str) -> dict:
+    status, data = _http_get(
+        "https://api.sendgrid.com/v3/user/profile",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 200:
+        return {"valid": True, "username": data.get("username", "?"), "email": data.get("email", "?")}
+    return {"valid": False, "reason": f"HTTP {status}"}
+
+
 def verify_hit(label: str, value: str, service: str) -> dict | None:
     raw = value.split()[-1] if value.startswith("Bearer ") else value
     if "Google OAuth2" in service or raw.startswith("ya29."):
@@ -1389,6 +1443,12 @@ def verify_hit(label: str, value: str, service: str) -> dict | None:
         return verify_slack(raw)
     if "Anthropic" in service:
         return verify_anthropic(raw)
+    if "Discord" in service:
+        return verify_discord(raw)
+    if "LinkedIn" in service:
+        return verify_linkedin(raw)
+    if "SendGrid" in service or label == "Sendgrid token":
+        return verify_sendgrid(raw)
     if "OpenAI" in service:
         return verify_openai(raw)
     if "Stripe" in service or label == "Stripe Secret Key":
@@ -1624,10 +1684,11 @@ ELECTRON_APPS: list[tuple[str, str]] = [
     ("Discord Canary",      "Discord Canary"),
     ("Slack Desktop",       "Slack"),
     ("Microsoft Teams",     "Microsoft Teams"),
+    ("Microsoft Teams (2)", "ms-teams"),
     ("WhatsApp Desktop",    "WhatsApp"),
     ("Telegram Desktop",    "Telegram"),
     ("Signal Desktop",      "Signal"),
-    ("VS Code",             "Electron"),   # VS Code renderer process on macOS
+    ("VS Code",             "Code Helper"),
     ("Cursor",              "Cursor"),
     ("Obsidian",            "Obsidian"),
     ("Notion Desktop",      "Notion"),

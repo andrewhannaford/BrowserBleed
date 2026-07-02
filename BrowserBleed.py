@@ -367,7 +367,7 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "Slack token":         re.compile(rb"xox[baprs]-[A-Za-z0-9\-]{10,}"),
     "GitHub token":        re.compile(rb"gh[pousr]_[A-Za-z0-9]{36,}"),
     "Discord token":       re.compile(rb"[MN][A-Za-z0-9]{23}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27}"),
-    "AWS Access Key":      re.compile(rb"A(?:KIA|SIA|ROA|IDA)[A-Z0-9]{16}"),
+    "AWS Access Key":      re.compile(rb"(?<![A-Z0-9])(A(?:KIA|SIA|ROA|IDA)[A-Z0-9]{16})(?![A-Z0-9])"),
     "Stripe key":          re.compile(rb"sk_(?:live|test)_[A-Za-z0-9]{24,}"),
     "npm token":           re.compile(rb"npm_[A-Za-z0-9]{36}"),
     "HuggingFace token":   re.compile(rb"hf_[A-Za-z0-9]{34,}"),
@@ -1569,6 +1569,49 @@ def verify_aws(access_key: str) -> dict:
         return {"valid": None, "reason": str(ex)}
 
 
+def verify_discord(token: str) -> dict:
+    status, data = _http_get(
+        "https://discord.com/api/v10/users/@me",
+        headers={"Authorization": token},
+    )
+    if status == 200:
+        username = data.get("username", "?")
+        uid      = data.get("id", "?")
+        return {"valid": True, "user": username, "id": uid}
+    return {"valid": False, "reason": f"HTTP {status}"}
+
+
+def verify_linkedin(token: str) -> dict:
+    """Redirect-check the li_at cookie against LinkedIn /feed/."""
+    import urllib.request as _ur
+    class _NoRedir(_ur.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            return None
+    opener = _ur.build_opener(_NoRedir())
+    req = _ur.Request(
+        "https://www.linkedin.com/feed/",
+        headers={"Cookie": f"li_at={token}", "User-Agent":
+                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+    )
+    try:
+        with opener.open(req, timeout=6) as r:
+            if r.status == 200:
+                return {"valid": True, "reason": "li_at cookie accepted (200 vs redirect unauthenticated)"}
+        return {"valid": None, "reason": f"HTTP {r.status}"}
+    except Exception as e:
+        return {"valid": None, "reason": str(e)}
+
+
+def verify_sendgrid(token: str) -> dict:
+    status, data = _http_get(
+        "https://api.sendgrid.com/v3/user/profile",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 200:
+        return {"valid": True, "username": data.get("username", "?"), "email": data.get("email", "?")}
+    return {"valid": False, "reason": f"HTTP {status}"}
+
+
 def verify_hit(label: str, value: str, service: str) -> dict | None:
     """Run the appropriate verifier. Returns None when no verifier exists for this service."""
     raw = value.split()[-1] if value.startswith("Bearer ") else value
@@ -1580,6 +1623,12 @@ def verify_hit(label: str, value: str, service: str) -> dict | None:
         return verify_slack(raw)
     if "Anthropic" in service:
         return verify_anthropic(raw)
+    if "Discord" in service:
+        return verify_discord(raw)
+    if "LinkedIn" in service:
+        return verify_linkedin(raw)
+    if "SendGrid" in service or label == "Sendgrid token":
+        return verify_sendgrid(raw)
     if "OpenAI" in service or raw.startswith("sk-"):
         return verify_openai(raw)
     if "Stripe" in service or raw.startswith("sk_live_") or raw.startswith("sk_test_"):

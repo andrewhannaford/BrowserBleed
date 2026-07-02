@@ -245,6 +245,60 @@ class TestDispatch(unittest.TestCase):
             self._dispatch("Password (JSON/API)", "Microsoft", "yJIBTaxlodA2uDmzUbE8jKN3GiMfpWZP")
         mock.assert_called_once()
 
+    # ── LinkedIn li_at ────────────────────────────────────────────────────────
+    def test_linkedin_li_at_label_routes(self):
+        with patch.object(st, "test_linkedin_li_at") as mock:
+            mock.return_value = st.Result("LinkedIn", "l", "v", "info", "—", "inconclusive")
+            self._dispatch("LinkedIn li_at", "LinkedIn", "li_at=AQEDARMxhJAFAAAAABkqwJoAAAAAykb3iQ")
+        mock.assert_called_once()
+
+    # ── Twitter auth_token ────────────────────────────────────────────────────
+    def test_twitter_auth_token_label_routes(self):
+        with patch.object(st, "test_twitter_auth_token") as mock:
+            mock.return_value = st.Result("Twitter / X", "l", "v", "info", "—", "inconclusive")
+            self._dispatch("Twitter auth_token", "Twitter / X", "auth_token=5a3f7c9e8b2d4f6a0c1e3d5f")
+        mock.assert_called_once()
+
+    # ── Anthropic session label ───────────────────────────────────────────────
+    def test_anthropic_session_label_routes(self):
+        with patch.object(st, "test_anthropic_session") as mock:
+            mock.return_value = st.Result("Anthropic", "l", "v", "expired", "—", "401")
+            self._dispatch("Anthropic session", "Anthropic / Claude",
+                           "20111GDqECYuMQ-Vhciczs3T-mwadEQ7KN5oKjEfm1ec6")
+        mock.assert_called_once()
+
+    # ── Session key ───────────────────────────────────────────────────────────
+    def test_session_key_anthropic_routes(self):
+        with patch.object(st, "test_anthropic_session") as mock:
+            mock.return_value = st.Result("Anthropic", "l", "v", "expired", "—", "401")
+            self._dispatch("Session key", "Anthropic / Claude", "20111GDqECYuMQ-Vhciczs3T-mwadEQ7KN5oKjEfm")
+        mock.assert_called_once()
+
+    def test_session_key_unknown_returns_info(self):
+        results = self._dispatch("Session key", "Unknown service", "someSessionKeyValue123")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].status, "info")
+
+    # ── SendGrid ──────────────────────────────────────────────────────────────
+    def test_sendgrid_label_routes(self):
+        with patch.object(st, "test_sendgrid") as mock:
+            mock.return_value = st.Result("SendGrid", "l", "v", "valid", "u", "a")
+            self._dispatch("Sendgrid token", "SendGrid",
+                           "SG.aBcDeFgHiJkLmNoPqRsTuVwX.aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567890abcdefgh")
+        mock.assert_called_once()
+
+    def test_sg_prefix_routes_to_sendgrid(self):
+        with patch.object(st, "test_sendgrid") as mock:
+            mock.return_value = st.Result("SendGrid", "l", "v", "valid", "u", "a")
+            self._dispatch("Bearer token", "Unknown",
+                           "SG.aBcDeFgHiJkLmNoPqRsTuVwX.aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567890abcdefgh")
+        mock.assert_called_once()
+
+    # ── Spotify: AQA prefix no longer routes ─────────────────────────────────
+    def test_aqa_prefix_not_routed_to_spotify(self):
+        results = self._dispatch("Bearer token", "Unknown", "AQAhRH1mt3DjufZQfOs0")
+        self.assertEqual(results, [])  # AQA too broad; narrowed to BQA only
+
     # ── No match returns empty ────────────────────────────────────────────────
     def test_unrecognised_returns_empty(self):
         results = self._dispatch("Unknown label", "Unknown service", "x" * 20)
@@ -612,6 +666,61 @@ class TestSessiontestJWTDecode(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 # Session ID testers
 # ══════════════════════════════════════════════════════════════════════════════
+class TestLinkedInTester(unittest.TestCase):
+
+    def test_valid_li_at_returns_valid(self):
+        with patch.object(st, "_status_only", side_effect=[200, 302]):
+            r = st.test_linkedin_li_at("AQEDARMxhJAFAAAAABkqwJoAAAAAykb3iQ", "LinkedIn li_at")
+        self.assertEqual(r.status, "valid")
+
+    def test_invalid_li_at_returns_info(self):
+        with patch.object(st, "_status_only", side_effect=[302, 302]):
+            r = st.test_linkedin_li_at("bad_token", "LinkedIn li_at")
+        self.assertEqual(r.status, "info")
+
+    def test_strips_li_at_prefix_when_present(self):
+        with patch.object(st, "_status_only", return_value=302):
+            st.test_linkedin_li_at("li_at=AQEDARMxhJAFAAAAABkqwJo", "LinkedIn li_at")
+        # Just verify it doesn't crash — prefix is stripped before sending
+
+
+class TestTwitterTester(unittest.TestCase):
+
+    def test_valid_auth_token_returns_valid(self):
+        with patch.object(st, "_status_only", side_effect=[200, 302]):
+            r = st.test_twitter_auth_token("5a3f7c9e8b2d4f6a0c1e3d5f", "Twitter auth_token")
+        self.assertEqual(r.status, "valid")
+
+    def test_inconclusive_returns_info(self):
+        with patch.object(st, "_status_only", side_effect=[302, 302]):
+            r = st.test_twitter_auth_token("bad", "Twitter auth_token")
+        self.assertEqual(r.status, "info")
+
+    def test_strips_auth_token_prefix(self):
+        with patch.object(st, "_status_only", return_value=302):
+            st.test_twitter_auth_token("auth_token=5a3f7c9e", "Twitter auth_token")
+
+
+class TestSendGridTester(unittest.TestCase):
+
+    def test_valid_key_returns_valid(self):
+        data = {"username": "apiuser", "email": "api@example.com"}
+        with patch.object(st, "_get", return_value=(200, data)):
+            r = st.test_sendgrid("SG.real.key", "Sendgrid token")
+        self.assertEqual(r.status, "valid")
+        self.assertIn("apiuser", r.identity)
+
+    def test_unauthorized_returns_invalid(self):
+        with patch.object(st, "_get", return_value=(401, {})):
+            r = st.test_sendgrid("SG.bad.key", "Sendgrid token")
+        self.assertEqual(r.status, "invalid")
+
+    def test_forbidden_returns_invalid(self):
+        with patch.object(st, "_get", return_value=(403, {})):
+            r = st.test_sendgrid("SG.nope.key", "Sendgrid token")
+        self.assertEqual(r.status, "invalid")
+
+
 class TestSessionIDTesters(unittest.TestCase):
 
     def test_google_session_id_valid(self):
