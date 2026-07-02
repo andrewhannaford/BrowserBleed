@@ -379,6 +379,7 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "LinkedIn li_at":      re.compile(rb"li_at=([A-Za-z0-9%._\-]{30,})"),
     "Twitter auth_token":  re.compile(rb"auth_token=([A-Fa-f0-9]{32,40})"),
     "Sendgrid token":      re.compile(rb"SG\.[A-Za-z0-9_\-]{22,}\.[A-Za-z0-9_\-]{43,}"),
+    "LinkedIn JSESSIONID": re.compile(rb"JSESSIONID=([A-Za-z0-9\-]{32,})"),
 }
 
 # Patterns whose raw bytes indicate a false positive (format strings, type schemas)
@@ -420,6 +421,7 @@ _HIT_TIER: dict[str, int] = {
     "Session ID": 2, "Cookie header": 2, "Set-Cookie header": 2,
     "Anthropic session": 0,
     "LinkedIn li_at":    0,
+    "LinkedIn JSESSIONID": 0,
     "Twitter auth_token": 0,
     "Sendgrid token":    0,
     "Session key":       1,
@@ -570,12 +572,36 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
     return raw_hits
 
 
+def _parse_cookies_from_header(cookie_header: str) -> list[tuple[str, str]]:
+    """
+    Parse individual cookies from a Cookie/Set-Cookie header value.
+    Returns list of (name, value) tuples.
+
+    Examples:
+      "li_at=ABC123; path=/" -> [("li_at", "ABC123")]
+      "a=1; b=2; c=3" -> [("a", "1"), ("b", "2"), ("c", "3")]
+    """
+    cookies = []
+    # Split by semicolon (cookie separator)
+    parts = cookie_header.split(";")
+    for part in parts:
+        part = part.strip()
+        if "=" in part:
+            name, value = part.split("=", 1)
+            # Only include if name looks like a real cookie name (not a directive like "path", "expires", etc)
+            name = name.strip()
+            if name and not name.lower() in ("path", "domain", "expires", "max-age", "secure", "httponly", "samesite"):
+                cookies.append((name, value.strip()))
+    return cookies
+
+
 def deduplicate(hits: list[dict]) -> list[dict]:
     """Two-pass dedup:
     Pass 1 - group by label:value[:50], keep shortest (removes trailing noise).
     Pass 2 - within each label, if A is a prefix of B, replace A with B (recovers
               chunk-boundary truncations where the same token was captured twice,
               once cut short and once in full).
+    Also post-processes Cookie headers to extract individual cookies.
     """
     groups: dict[str, list[dict]] = {}
     for h in hits:
@@ -604,7 +630,27 @@ def deduplicate(hits: list[dict]) -> list[dict]:
         final.extend(kept)
 
     final.sort(key=lambda h: int(h["address"], 16))
-    return final
+
+    # Post-process Cookie headers to extract individual cookies
+    expanded: list[dict] = []
+    for h in final:
+        if h["label"] in ("Cookie header", "Set-Cookie header"):
+            try:
+                cookies = _parse_cookies_from_header(h["value"])
+                for name, value in cookies:
+                    # Create new hit for each individual cookie
+                    expanded.append({
+                        **h,
+                        "label": f"Cookie ({name})",
+                        "value": f"{name}={value}",
+                    })
+            except Exception:
+                # If parsing fails, keep the original
+                expanded.append(h)
+        else:
+            expanded.append(h)
+
+    return expanded
 
 
 # ── Browser config ─────────────────────────────────────────────────────────────
