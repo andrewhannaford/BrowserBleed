@@ -8,6 +8,7 @@ import time
 import json
 from typing import Optional, Dict, List, TYPE_CHECKING
 from urllib.parse import urljoin
+import errno
 
 # Ensure UTF-8 output on Windows
 if sys.platform == "win32":
@@ -71,9 +72,55 @@ COOKIE_CONFIGS = {
 }
 
 
+def import_cookies_from_jar(driver: "Chrome", jar_path: str) -> None:
+    """
+    Import cookies from Netscape cookie jar file into browser.
+
+    Args:
+        driver: Selenium WebDriver instance
+        jar_path: Path to .txt cookie jar file (Netscape format)
+    """
+    with open(jar_path) as f:
+        for line in f:
+            line = line.strip()
+            # Skip comments and empty lines
+            if not line or line.startswith("#"):
+                continue
+
+            # Parse Netscape format: domain flag path secure expiration name value
+            parts = line.split("\t")
+            if len(parts) < 7:
+                continue
+
+            domain, flag, path, secure, expiration, name, value = parts[0:7]
+
+            # Navigate to domain first (required for cookie setting)
+            try:
+                driver.get(f"https://{domain.lstrip('.')}")
+                time.sleep(0.5)
+
+                # Add the cookie
+                cookie = {
+                    "name": name,
+                    "value": value,
+                    "domain": domain,
+                    "path": path,
+                    "secure": secure.lower() == "true",
+                    "httpOnly": True,
+                }
+
+                if expiration and expiration != "0":
+                    cookie["expiry"] = int(expiration)
+
+                driver.add_cookie(cookie)
+            except Exception as e:
+                print(f"    Warning: Failed to set {name}: {e}")
+
+
 def open_authenticated_session(
     service: str,
-    token_value: str,
+    token_value: str = None,
+    cookie_jar: str = None,
     headless: bool = False,
     wait_seconds: int = 0,
     auto_close: bool = False
@@ -83,7 +130,8 @@ def open_authenticated_session(
 
     Args:
         service: Service name (e.g., "GitHub", "LinkedIn")
-        token_value: The credential/token/cookie value
+        token_value: The credential/token/cookie value (legacy, use cookie_jar)
+        cookie_jar: Path to Netscape format cookie jar file (RECOMMENDED)
         headless: Run browser in headless mode (default: False - show window)
         wait_seconds: Seconds to wait before closing (0 = keep open indefinitely)
         auto_close: Auto-close after wait_seconds (default: False - keep open)
@@ -96,6 +144,40 @@ def open_authenticated_session(
         print(f"  [!] Selenium not installed. Install with: pip install selenium")
         return None
 
+    # If cookie_jar provided, use it (recommended for imported cookies)
+    if cookie_jar and os.path.exists(cookie_jar):
+        print(f"  [*] Importing cookies from: {cookie_jar}")
+        try:
+            options = Options()
+            if headless:
+                options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+
+            driver = webdriver.Chrome(options=options)
+
+            # Import all cookies from jar
+            import_cookies_from_jar(driver, cookie_jar)
+
+            # Navigate to a page to verify cookies loaded
+            driver.get("https://google.com")
+            time.sleep(2)
+
+            print(f"  [✓] Imported cookies from jar")
+            print(f"      URL: {driver.current_url}")
+            print(f"      Browser is open for interaction")
+
+            if auto_close and wait_seconds > 0:
+                time.sleep(wait_seconds)
+                driver.quit()
+                return None
+            else:
+                return driver
+        except Exception as e:
+            print(f"  [!] Failed to import from jar: {e}")
+            return None
+
+    # Fallback: token_value based injection (original method)
     service_url = SERVICE_URLS.get(service, f"https://{service.lower()}.com")
     cookies = COOKIE_CONFIGS.get(service, [])
 
