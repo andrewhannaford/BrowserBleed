@@ -118,7 +118,7 @@ def import_cookies_from_jar(driver: "Chrome", jar_path: str) -> None:
 
 
 def open_authenticated_session(
-    service: str,
+    service: str = None,
     token_value: str = None,
     cookie_jar: str = None,
     headless: bool = False,
