@@ -977,7 +977,7 @@ def _find_latest_report_zip() -> str | None:
     if not os.path.exists(downloads):
         return None
 
-    pattern = os.path.join(downloads, "*_????-??-??.zip")
+    pattern = os.path.join(downloads, "*_????-??-??*.zip")
     zips = glob.glob(pattern)
     if not zips:
         return None
@@ -1001,12 +1001,12 @@ def _find_csv() -> str | None:
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "bb_results.csv"),
     ]
 
-    # 3. Check for recently extracted CSVs in ~/Downloads matching pattern *_YYYY-MM-DD.csv
+    # 3. Check for recently extracted CSVs in ~/Downloads matching pattern *_YYYY-MM-DD*.csv
     home = os.path.expanduser("~")
     if home:
         downloads = os.path.join(home, "Downloads")
         if os.path.exists(downloads):
-            pattern = os.path.join(downloads, "*_????-??-??.csv")
+            pattern = os.path.join(downloads, "*_????-??-??*.csv")
             csvs = glob.glob(pattern)
             if csvs:
                 latest_csv = max(csvs, key=os.path.getmtime)
