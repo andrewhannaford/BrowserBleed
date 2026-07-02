@@ -1331,12 +1331,14 @@ def main():
         BROWSER_SERVICES = {"LinkedIn", "GitHub", "Google", "Discord", "Slack", "Anthropic",
                            "Spotify", "Twitter", "Microsoft", "AWS", "OpenAI"}
 
+        # Filter to only truly valid credentials (not just "info")
         valid_results = [r for r in all_results
                         if r.status == "valid" and r.service in BROWSER_SERVICES]
 
         if not valid_results:
             print(yellow("[!] No browser-testable valid credentials found."))
             print(dim("   (API keys, JWTs, and tokens are tested via API, not browser)"))
+            print(dim("   (Inconclusive 'info' status means authentication couldn't be verified)"))
             return
 
         print(green(f"[+] Opening {len(valid_results)} authenticated browser session(s)…\n"))
