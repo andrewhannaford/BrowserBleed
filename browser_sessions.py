@@ -75,7 +75,8 @@ def open_authenticated_session(
     service: str,
     token_value: str,
     headless: bool = False,
-    wait_seconds: int = 5
+    wait_seconds: int = 0,
+    auto_close: bool = False
 ) -> Optional["Chrome"]:
     """
     Open a browser with an authenticated session for a service.
@@ -83,11 +84,13 @@ def open_authenticated_session(
     Args:
         service: Service name (e.g., "GitHub", "LinkedIn")
         token_value: The credential/token/cookie value
-        headless: Run browser in headless mode
-        wait_seconds: Seconds to wait before closing (0 = keep open)
+        headless: Run browser in headless mode (default: False - show window)
+        wait_seconds: Seconds to wait before closing (0 = keep open indefinitely)
+        auto_close: Auto-close after wait_seconds (default: False - keep open)
 
     Returns:
-        WebDriver instance if successful, None otherwise
+        WebDriver instance if successful, None otherwise.
+        Browser stays open for manual interaction unless auto_close=True.
     """
     if not SELENIUM_AVAILABLE:
         print(f"  [!] Selenium not installed. Install with: pip install selenium")
@@ -144,10 +147,11 @@ def open_authenticated_session(
 
         print(f"  [✓] Authenticated {service} session opened")
         print(f"      URL: {current_url}")
+        print(f"      Browser is open for interaction. Close manually or call driver.quit()")
 
-        # Keep open or close after wait
-        if wait_seconds > 0:
-            print(f"      Keeping browser open for {wait_seconds} seconds...")
+        # Auto-close if requested, otherwise keep open
+        if auto_close and wait_seconds > 0:
+            print(f"      Auto-closing in {wait_seconds} seconds...")
             time.sleep(wait_seconds)
             driver.quit()
             return None
