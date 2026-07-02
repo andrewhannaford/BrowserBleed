@@ -380,8 +380,7 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "LinkedIn JSESSIONID": re.compile(rb"JSESSIONID=([A-Za-z0-9\-]{32,})"),
     "Twitter auth_token":  re.compile(rb"auth_token=([A-Fa-f0-9]{32,40})"),
     "Sendgrid token":      re.compile(rb"SG\.[A-Za-z0-9_\-]{22,}\.[A-Za-z0-9_\-]{43,}"),
-    "Discord token":       re.compile(rb"MFA\.[A-Za-z0-9_-]{80,}"),
-    "Discord user token":  re.compile(rb"(?i)authorization[\"'\s]*[:=][\"'\s]*([A-Za-z0-9_-]{50,})"),
+    "Discord token":       re.compile(rb"[A-Za-z0-9_-]{18,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}"),
     "Slack xoxp":          re.compile(rb"xoxp-[A-Za-z0-9\-]{10,}"),
     "Slack xoxb":          re.compile(rb"xoxb-[A-Za-z0-9\-]{10,}"),
     "Anthropic API key":   re.compile(rb"sk-ant-[A-Za-z0-9\-_]{90,}"),
@@ -431,7 +430,6 @@ _HIT_TIER: dict[str, int] = {
     "Twitter auth_token": 0,
     "Sendgrid token":    0,
     "Discord token":     0,
-    "Discord user token": 0,
     "Slack xoxp":        0,
     "Slack xoxb":        0,
     "Anthropic API key": 0,
@@ -476,10 +474,9 @@ _QUICK_PREFIXES: tuple[bytes, ...] = (
     b"li_at=",         # LinkedIn auth cookie
     b"JSESSIONID=",    # LinkedIn / Java sessions
     b"auth_token=",    # Twitter/X auth cookie
-    b"MFA.",           # Discord token
     b"SG.",            # SendGrid API key
     b"xoxp-", b"xoxb-", # Slack tokens
-    b"sk-",            # OpenAI, Anthropic, etc. keys
+    b"sk-",            # Anthropic, OpenAI, etc. keys
     b"sessionKey",     # Anthropic / generic session key
 )
 
