@@ -135,10 +135,19 @@ def open_authenticated_session(
         driver.refresh()
         time.sleep(2)
 
-        print(f"  [✓] Opened {service} session in browser")
+        # Verify we're actually authenticated by checking if redirect happened
+        current_url = driver.current_url
+        if "login" in current_url.lower() or "signin" in current_url.lower():
+            print(f"  [✗] Still at login page - cookie may not be valid: {current_url}")
+            driver.quit()
+            return None
+
+        print(f"  [✓] Authenticated {service} session opened")
+        print(f"      URL: {current_url}")
 
         # Keep open or close after wait
         if wait_seconds > 0:
+            print(f"      Keeping browser open for {wait_seconds} seconds...")
             time.sleep(wait_seconds)
             driver.quit()
             return None
