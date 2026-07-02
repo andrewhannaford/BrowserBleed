@@ -447,7 +447,7 @@ _DEFAULT_BROWSER: str = ""
 _QUICK_PREFIXES: tuple[bytes, ...] = (
     b"eyJ",            # JWT
     b"Bearer ",        # Bearer / Authorization headers
-    b"Authorization:", b"Cookie:", b"Set-Cookie:",
+    b"Authorization:",  # Specific: Authorization header, not generic Cookie:
     b"access_token", b"refresh_token", b"session_token", b"session_id",
     b"password",
     b"SAPISID=",
@@ -462,6 +462,7 @@ _QUICK_PREFIXES: tuple[bytes, ...] = (
     b"-----BEGIN",     # SSH / PEM keys
     b"20111",          # Anthropic session token
     b"li_at=",         # LinkedIn auth cookie
+    b"JSESSIONID=",    # LinkedIn / Java sessions
     b"auth_token=",    # Twitter/X auth cookie
     b"SG.",            # SendGrid API key
     b"sessionKey",     # Anthropic / generic session key
