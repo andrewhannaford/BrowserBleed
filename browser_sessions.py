@@ -6,7 +6,7 @@ import os
 import sys
 import time
 import json
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, TYPE_CHECKING
 from urllib.parse import urljoin
 
 # Ensure UTF-8 output on Windows
@@ -23,6 +23,10 @@ try:
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
+    webdriver = None  # type: ignore
+
+if TYPE_CHECKING:
+    from selenium.webdriver import Chrome
 
 
 # Service login URLs
@@ -72,7 +76,7 @@ def open_authenticated_session(
     token_value: str,
     headless: bool = False,
     wait_seconds: int = 5
-) -> Optional[webdriver.Chrome]:
+) -> Optional["Chrome"]:
     """
     Open a browser with an authenticated session for a service.
 

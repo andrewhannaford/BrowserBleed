@@ -186,3 +186,26 @@ See [`SESSIONTEST_USAGE.md`](SESSIONTEST_USAGE.md) for complete usage guide and 
 - **Hit count variation**: Normal — tied to how many browser sessions are active at run time.
   Session ID hits dominate the count (can be 400+ or as low as 10 depending on open tabs).
   Core credentials (API keys, OAuth tokens) are stable across runs.
+
+## CI/CD — Always Check Before Considering Work Done
+
+**Rule**: After every `git push`, immediately check GitHub Actions status before marking the work complete.
+
+```bash
+# Check workflow status
+gh run list --limit 1
+
+# View latest run details
+gh run view <run-id>
+
+# If tests fail, DO NOT close the issue. Debug locally first:
+python3 test_sessiontest.py    # run tests directly
+pytest test_sessiontest.py -v  # run via pytest (may have encoding issues due to UTF-8 wrapping)
+```
+
+**Why**: Tests run on push. Failures = broken main branch. Fix locally before considering work done.
+
+**Common issues to watch**:
+- UTF-8 encoding conflicts with sys.stdout wrapping (use direct `python3 test_sessiontest.py`)
+- Import errors from recent changes
+- Test data becoming stale (tokens expire, services change APIs)
