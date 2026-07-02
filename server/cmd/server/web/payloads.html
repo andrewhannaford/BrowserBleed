@@ -1255,6 +1255,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ics-datetime').value =
     `${tomorrow.getFullYear()}-${padZ(tomorrow.getMonth()+1)}-${padZ(tomorrow.getDate())}T10:00`;
 
+  // Initialize sessiontest command display
+  updateSTCommand();
+
   loadAuthStatus();
   loadOAuthCreds();
   loadEmailConfig();
