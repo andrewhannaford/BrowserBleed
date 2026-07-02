@@ -37,6 +37,12 @@ import zipfile
 from collections import defaultdict
 from datetime import datetime
 
+try:
+    from browser_sessions import open_authenticated_session, SELENIUM_AVAILABLE
+except ImportError:
+    SELENIUM_AVAILABLE = False
+    open_authenticated_session = None
+
 # ── ANSI colours ──────────────────────────────────────────────────────────────
 
 def _colour(code: str, text: str) -> str:
@@ -1147,7 +1153,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("csv_file", nargs="?", help="bb_results.csv path (auto-detected if omitted)")
-    parser.add_argument("--browser",        action="store_true", help="Open Playwright browser for cookie sessions")
+    parser.add_argument("--browser-open",   action="store_true", help="Open browser sessions for valid credentials (requires Selenium)")
+    parser.add_argument("--browser-keep",   action="store_true", help="Keep browser windows open after testing (used with --browser-open)")
     parser.add_argument("--timeout",        type=int, default=10, metavar="SECS", help="Per-request timeout in seconds (default 10)")
     parser.add_argument("--no-verify-ssl",  action="store_true", help="Skip TLS certificate verification")
     parser.add_argument("--json",           action="store_true", help="Output results as JSON")
@@ -1311,6 +1318,43 @@ def main():
           f"{red(str(invalid))} invalid   "
           f"{dim(str(info))} info"
           f"{skip_str}\n")
+
+    # ── Open browser sessions for valid credentials ────────────────────────────
+    if args.browser_open:
+        if not SELENIUM_AVAILABLE:
+            print(red("[!] Selenium not available. Install with: pip install selenium"))
+            return
+
+        valid_results = [r for r in all_results if r.status == "valid"]
+        if not valid_results:
+            print(yellow("[!] No valid credentials to open in browser."))
+            return
+
+        print(green(f"[+] Opening {len(valid_results)} authenticated browser session(s)…\n"))
+        drivers = []
+        for r in valid_results:
+            driver = open_authenticated_session(
+                r.service,
+                r.value,
+                headless=False,
+                wait_seconds=0 if args.browser_keep else 3
+            )
+            if driver:
+                drivers.append((r.service, r.identity, driver))
+
+        if drivers and args.browser_keep:
+            print(f"\n{green(f'[+]')} {len(drivers)} session(s) open. Press Ctrl+C to close.")
+            try:
+                while True:
+                    time.sleep(0.5)
+            except KeyboardInterrupt:
+                print(f"\n{dim('[*]')} Closing sessions...")
+                for service, identity, driver in drivers:
+                    try:
+                        driver.quit()
+                        print(f"  {dim('[-')} Closed {service} ({identity})")
+                    except:
+                        pass
 
 
 # ── Display helpers ────────────────────────────────────────────────────────────
