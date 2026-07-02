@@ -24,6 +24,7 @@ import argparse
 import base64
 import csv
 import glob
+import io
 import json
 import os
 import ssl
@@ -1143,9 +1144,8 @@ BANNER = """\
 def main():
     global _timeout, _ssl_ctx
 
-    # Ensure UTF-8 output on Windows
-    if sys.platform == "win32":
-        import io
+    # Ensure UTF-8 output on Windows (skip if already wrapped)
+    if sys.platform == "win32" and not isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
     parser = argparse.ArgumentParser(
@@ -1271,7 +1271,7 @@ def main():
             time.sleep(args.delay)
             continue
 
-        results = _dispatch(label, service, value, args.browser)
+        results = _dispatch(label, service, value, False)
         for r in results:
             all_results.append(r)
             n_shown += 1
@@ -1286,7 +1286,7 @@ def main():
     for domain, cookies in cookies_by_domain.items():
         if not domain:
             continue
-        results = test_cookie_session(domain, cookies, browser=args.browser)
+        results = test_cookie_session(domain, cookies, browser=False)
         for r in results:
             all_results.append(r)
             n_shown += 1

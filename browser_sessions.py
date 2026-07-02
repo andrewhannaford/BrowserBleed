@@ -3,10 +3,16 @@ Browser Session Manager — Open authenticated sessions for valid credentials
 """
 
 import os
+import sys
 import time
 import json
 from typing import Optional, Dict, List
 from urllib.parse import urljoin
+
+# Ensure UTF-8 output on Windows
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 try:
     from selenium import webdriver
