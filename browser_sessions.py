@@ -125,10 +125,57 @@ def import_cookies_from_jar(driver: "Chrome", jar_path: str) -> None:
                 print(f"    Warning: Failed to set {name}: {e}")
 
 
+def import_storage_from_json(driver: "Chrome", storage_path: str) -> None:
+    """
+    Import localStorage and sessionStorage from JSON file into browser.
+
+    Args:
+        driver: Selenium WebDriver instance
+        storage_path: Path to .json storage file
+    """
+    import json
+
+    with open(storage_path) as f:
+        storage_data = json.load(f)
+
+    # Import localStorage
+    if "localStorage" in storage_data:
+        print("  [*] Importing localStorage...")
+        for domain, items in storage_data["localStorage"].items():
+            try:
+                driver.get(f"https://{domain}")
+                time.sleep(0.5)
+
+                for key, value in items.items():
+                    script = f"localStorage.setItem('{key}', {json.dumps(value)})"
+                    driver.execute_script(script)
+
+                print(f"      ✓ {len(items)} items for {domain}")
+            except Exception as e:
+                print(f"      Warning: localStorage import failed for {domain}: {e}")
+
+    # Import sessionStorage
+    if "sessionStorage" in storage_data:
+        print("  [*] Importing sessionStorage...")
+        for domain, items in storage_data["sessionStorage"].items():
+            try:
+                driver.get(f"https://{domain}")
+                time.sleep(0.5)
+
+                for key, value in items.items():
+                    script = f"sessionStorage.setItem('{key}', {json.dumps(value)})"
+                    driver.execute_script(script)
+
+                print(f"      ✓ {len(items)} items for {domain}")
+            except Exception as e:
+                print(f"      Warning: sessionStorage import failed for {domain}: {e}")
+
+
 def open_authenticated_session(
     service: str = None,
     token_value: str = None,
     cookie_jar: str = None,
+    storage_file: str = None,
     headless: bool = False,
     wait_seconds: int = 0,
     auto_close: bool = False
@@ -139,7 +186,8 @@ def open_authenticated_session(
     Args:
         service: Service name (e.g., "GitHub", "LinkedIn")
         token_value: The credential/token/cookie value (legacy, use cookie_jar)
-        cookie_jar: Path to Netscape format cookie jar file (RECOMMENDED)
+        cookie_jar: Path to Netscape format cookie jar file
+        storage_file: Path to JSON file with localStorage/sessionStorage
         headless: Run browser in headless mode (default: False - show window)
         wait_seconds: Seconds to wait before closing (0 = keep open indefinitely)
         auto_close: Auto-close after wait_seconds (default: False - keep open)
@@ -175,11 +223,16 @@ def open_authenticated_session(
             # Import all cookies from jar
             import_cookies_from_jar(driver, cookie_jar)
 
+            # Import storage (localStorage/sessionStorage) if provided
+            if storage_file and os.path.exists(storage_file):
+                print(f"\n  [*] Importing browser storage from: {storage_file}")
+                import_storage_from_json(driver, storage_file)
+
             # Navigate to a page to verify cookies loaded
             driver.get("https://google.com")
             time.sleep(2)
 
-            print(f"  [✓] Imported cookies from jar")
+            print(f"  [✓] Imported cookies and storage")
             print(f"      URL: {driver.current_url}")
             print(f"      Browser is open for interaction")
 
