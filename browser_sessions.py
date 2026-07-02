@@ -22,8 +22,16 @@ try:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.chrome.options import Options
     SELENIUM_AVAILABLE = True
+
+    # Try to use undetected-chromedriver for Cloudflare bypass
+    try:
+        import undetected_chrome as uc
+        UNDETECTED_AVAILABLE = True
+    except ImportError:
+        UNDETECTED_AVAILABLE = False
 except ImportError:
     SELENIUM_AVAILABLE = False
+    UNDETECTED_AVAILABLE = False
     webdriver = None  # type: ignore
 
 if TYPE_CHECKING:
@@ -148,13 +156,21 @@ def open_authenticated_session(
     if cookie_jar and os.path.exists(cookie_jar):
         print(f"  [*] Importing cookies from: {cookie_jar}")
         try:
-            options = Options()
-            if headless:
-                options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
+            # Use undetected-chromedriver if available (bypasses Cloudflare)
+            if UNDETECTED_AVAILABLE:
+                print(f"  [*] Using undetected-chromedriver (Cloudflare bypass enabled)")
+                driver = uc.Chrome(headless=headless, use_subprocess=False)
+            else:
+                options = Options()
+                if headless:
+                    options.add_argument("--headless")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                options.add_argument("--disable-blink-features=AutomationControlled")
+                options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                options.add_experimental_option("useAutomationExtension", False)
 
-            driver = webdriver.Chrome(options=options)
+                driver = webdriver.Chrome(options=options)
 
             # Import all cookies from jar
             import_cookies_from_jar(driver, cookie_jar)
@@ -186,16 +202,23 @@ def open_authenticated_session(
         return None
 
     try:
-        # Setup Chrome options
-        options = Options()
-        if headless:
-            options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-blink-features=AutomationControlled")
+        # Use undetected-chromedriver if available (bypasses Cloudflare)
+        if UNDETECTED_AVAILABLE:
+            print(f"  [*] Using undetected-chromedriver (Cloudflare bypass enabled)")
+            driver = uc.Chrome(headless=headless, use_subprocess=False)
+        else:
+            # Setup Chrome options with stealth patches
+            options = Options()
+            if headless:
+                options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option("useAutomationExtension", False)
 
-        # Create driver
-        driver = webdriver.Chrome(options=options)
+            # Create driver
+            driver = webdriver.Chrome(options=options)
 
         # Navigate to service first (to set domain)
         driver.get(service_url)
