@@ -1188,8 +1188,8 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
     if label == "SSH private key":    return "SSH Key"
     if label == "Google SAPISID":     return "Google (YouTube / Gmail)"
     if label == "Discord token":      return "Discord"
-    if label == "Slack token":        return "Slack"
-    if label == "GitHub token":       return "GitHub"
+    # Note: GitHub and Slack tokens are handled below via value-based detection to
+    # capture their detailed types (personal/OAuth, bot/user/app, etc.)
     if label == "Anthropic session":  return "Anthropic / Claude"
     if label == "LinkedIn li_at":     return "LinkedIn"
     if label == "Twitter auth_token": return "Twitter / X"
