@@ -176,14 +176,36 @@ def test_github(value: str, label: str) -> Result:
 
 
 def test_linkedin_li_at(value: str, label: str) -> Result:
-    """Test a LinkedIn li_at cookie via redirect-check against /feed/."""
+    """Test a LinkedIn li_at cookie via redirect-check and try to fetch profile data."""
     cookie_val = value.partition("=")[2] if value.startswith("li_at=") else value
     jar = f"li_at={cookie_val}"
-    status_auth = _status_only("https://www.linkedin.com/feed/", {"Cookie": jar, "User-Agent": _UA})
+    headers = {"Cookie": jar, "User-Agent": _UA}
+
+    status_auth = _status_only("https://www.linkedin.com/feed/", headers)
     status_anon = _status_only("https://www.linkedin.com/feed/", {"User-Agent": _UA})
+
     if status_auth == 200 and status_anon != 200:
+        # Session is valid, try to get profile info via GraphQL
+        identity = "authenticated user"
+        access = "session active"
+
+        # Try to fetch profile data from LinkedIn API endpoint
+        graphql_status, graphql_data = _get(
+            "https://www.linkedin.com/voyager/api/graphql",
+            {**headers, "Content-Type": "application/json"},
+            body=b'{"operationName":"me","variables":{},"query":"query me { me { localizedFirstName localizedLastName emailAddress } }"}',
+            method="POST",
+        )
+        if graphql_status == 200 and isinstance(graphql_data, dict):
+            included = graphql_data.get("included", [])
+            if included and isinstance(included[0], dict):
+                data = included[0].get("localizedFirstName", "")
+                if data:
+                    identity = data
+                    access = f"LinkedIn session active  email verified:{graphql_data.get('data', {}).get('me', {}).get('emailAddress', '?')}"
+
         return Result("LinkedIn", label, value[:16] + "…", "valid",
-                      "authenticated", f"li_at → 200 vs {status_anon} without — session active", {})
+                      identity, access, {})
     if status_auth == 0:
         return Result("LinkedIn", label, value[:16] + "…", "error", "—", "connection failed", {})
     return Result("LinkedIn", label, value[:16] + "…", "info",
@@ -222,7 +244,7 @@ def test_sendgrid(value: str, label: str) -> Result:
 
 
 def test_discord(value: str, label: str) -> Result:
-    """Test a Discord user token against /api/v10/users/@me."""
+    """Test a Discord user token against /api/v10/users/@me and fetch guilds."""
     status, data = _get(
         "https://discord.com/api/v10/users/@me",
         {"Authorization": value, "User-Agent": _UA},
@@ -233,14 +255,39 @@ def test_discord(value: str, label: str) -> Result:
         email    = data.get("email", "")
         tag      = f"{username}#{disc}" if disc and disc != "0" else username
         identity = f"{tag} <{email}>" if email else tag
+
+        # Get additional info: Nitro type, bot status, badges
+        access_parts = []
+        if data.get("bot"):
+            access_parts.append("bot account")
+        if data.get("system"):
+            access_parts.append("system account")
+
+        # Nitro subscription type: 0=none, 1=nitro classic, 2=nitro
+        nitro_type = data.get("premium_type", 0)
+        if nitro_type == 1:
+            access_parts.append("Nitro Classic")
+        elif nitro_type == 2:
+            access_parts.append("Nitro")
+
+        # Get guild count
+        guild_status, guild_data = _get(
+            "https://discord.com/api/v10/users/@me/guilds",
+            {"Authorization": value, "User-Agent": _UA},
+        )
+        guild_count = len(guild_data) if guild_status == 200 and isinstance(guild_data, list) else 0
+        if guild_count > 0:
+            access_parts.append(f"{guild_count} guilds")
+
+        access = "  ".join(access_parts) if access_parts else "user account"
         return Result("Discord", label, value[:16] + "…", "valid",
-                      identity, f"id:{data.get('id','?')}  verified:{data.get('verified','?')}", data)
+                      identity, f"id:{data.get('id','?')}  verified:{data.get('verified','?')}  {access}", data)
     stat = "invalid" if status in (401, 403) else "error"
     return Result("Discord", label, value[:16] + "…", stat, "—", f"HTTP {status}", data)
 
 
 def test_spotify(value: str, label: str) -> Result:
-    """Test a Spotify access token against /v1/me."""
+    """Test a Spotify access token against /v1/me and fetch follower/playlist data."""
     status, data = _get(
         "https://api.spotify.com/v1/me",
         {"Authorization": f"Bearer {value}"},
@@ -250,8 +297,33 @@ def test_spotify(value: str, label: str) -> Result:
         email   = data.get("email", "")
         product = data.get("product", "")
         identity = f"{name} <{email}>" if email else name
+
+        access_parts = []
+
+        # Plan type (free or premium)
+        if product:
+            access_parts.append(f"plan:{product}")
+
+        # Follower count
+        followers = data.get("followers", {})
+        if isinstance(followers, dict):
+            follower_count = followers.get("total", 0)
+            if follower_count > 0:
+                access_parts.append(f"{follower_count} followers")
+
+        # Get playlist count
+        playlist_status, playlist_data = _get(
+            "https://api.spotify.com/v1/me/playlists",
+            {"Authorization": f"Bearer {value}"},
+        )
+        if playlist_status == 200 and isinstance(playlist_data, dict):
+            playlist_count = playlist_data.get("total", 0)
+            if playlist_count > 0:
+                access_parts.append(f"{playlist_count} playlists")
+
+        access = "  ".join(access_parts) if access_parts else "Spotify access confirmed"
         return Result("Spotify", label, value[:14] + "…", "valid",
-                      identity, f"plan:{product}" if product else "Spotify access confirmed", data)
+                      identity, access, data)
     stat = "expired" if status == 401 else ("invalid" if status == 403 else "error")
     return Result("Spotify", label, value[:14] + "…", stat, "—", f"HTTP {status}", data)
 
@@ -290,11 +362,30 @@ def test_linkedin_session_id(value: str, label: str) -> Result:
     """Try a LinkedIn session ID as li_at then JSESSIONID cookie (best-effort)."""
     for cookie_name in ("li_at", "JSESSIONID"):
         jar = f"{cookie_name}={value}"
-        status_auth = _status_only("https://www.linkedin.com/feed/", {"Cookie": jar, "User-Agent": _UA})
+        headers = {"Cookie": jar, "User-Agent": _UA}
+        status_auth = _status_only("https://www.linkedin.com/feed/", headers)
         status_anon = _status_only("https://www.linkedin.com/feed/", {"User-Agent": _UA})
         if status_auth == 200 and status_anon != 200:
+            identity = f"authenticated user ({cookie_name})"
+            access = f"{cookie_name} cookie — LinkedIn session active"
+
+            # Try to get profile data if it's li_at (main auth cookie)
+            if cookie_name == "li_at":
+                graphql_status, graphql_data = _get(
+                    "https://www.linkedin.com/voyager/api/graphql",
+                    {**headers, "Content-Type": "application/json"},
+                    body=b'{"operationName":"me","variables":{},"query":"query me { me { localizedFirstName localizedLastName } }"}',
+                    method="POST",
+                )
+                if graphql_status == 200 and isinstance(graphql_data, dict):
+                    included = graphql_data.get("included", [])
+                    if included and isinstance(included[0], dict):
+                        fname = included[0].get("localizedFirstName", "")
+                        if fname:
+                            identity = fname
+
             return Result("LinkedIn", label, value[:16] + "…", "valid",
-                          "authenticated", f"{cookie_name} cookie — LinkedIn session active", {})
+                          identity, access, {})
     return Result("LinkedIn", label, value[:16] + "…", "info",
                   "—", "li_at/JSESSIONID attempts inconclusive — may need full cookie jar", {})
 
