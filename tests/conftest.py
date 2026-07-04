@@ -59,7 +59,8 @@ def csv_row(label: str, service: str, value: str, browser: str = "Chrome") -> di
     }
 
 
-def write_csv(rows: list[dict], path: str) -> None:
+def write_csv(path: str, rows: list[dict]) -> None:
+    """Write CSV file with credential rows. Parameters: path, rows (for compatibility)."""
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f, fieldnames=["browser", "profile", "label", "service", "value", "address"]

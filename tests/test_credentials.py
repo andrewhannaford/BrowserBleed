@@ -19,6 +19,20 @@ from tests.conftest import csv_row, http_error, make_jwe_header, make_jwt, make_
 # Legacy aliases used throughout this module
 _http_error = http_error
 _make_urlopen_cm = make_urlopen_cm
+_write_csv = write_csv
+
+# AWS STS GetCallerIdentity response for testing
+_STS_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <GetCallerIdentityResult>
+    <Arn>arn:aws:iam::123456789012:user/test-user</Arn>
+    <UserId>AIDAIOSFODNN7EXAMPLE</UserId>
+    <Account>123456789012</Account>
+  </GetCallerIdentityResult>
+  <ResponseMetadata>
+    <RequestId>12345678-1234-1234-1234-123456789012</RequestId>
+  </ResponseMetadata>
+</GetCallerIdentityResponse>"""
 
 # ── 1. Colour helpers ─────────────────────────────────────────────────────────
 
