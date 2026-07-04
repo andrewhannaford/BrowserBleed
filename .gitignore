@@ -1,7 +1,7 @@
 # Claude Code context file — contains operational deployment details
 CLAUDE.md
 
-# Output / test runs
+# Output / test runs / test data
 browserbleed_output.txt
 bb_results.txt
 bb_results.csv
@@ -10,6 +10,10 @@ bb_test.txt
 bb_test.csv
 bb_exe_test.txt
 bb_exe_test.csv
+claude_session.txt
+cookies.txt
+stolen_session.json
+extract_and_test.sh
 
 # Built payloads — contain baked-in server URL and API key
 payloads/
@@ -53,3 +57,4 @@ dist/
 
 # macOS
 .DS_Store
+stolen_profile/
