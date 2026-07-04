@@ -43,6 +43,15 @@ try:
 except ImportError:
     _CRYPTO_OK = False
 
+try:
+    from browserbleed.shared import (
+        CREDENTIAL_PATTERNS, _NOISE_BYTES, _NOISE_EXACT, _HIT_TIER, _QUICK_PREFIXES,
+        _trunc, _has_credential_hint, _is_noise, _parse_cookies_from_header,
+        deduplicate, chrome_epoch_to_str, unix_ts_to_str, _get_domain_from_service,
+    )
+except ImportError:
+    pass
+
 if sys.stdout is not None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
