@@ -19,6 +19,7 @@ from tests.conftest import csv_row, http_error, make_jwe_header, make_jwt, make_
 # Legacy aliases used throughout this module
 _http_error = http_error
 _make_urlopen_cm = make_urlopen_cm
+_write_csv = write_csv
 
 # ── 1. Colour helpers ─────────────────────────────────────────────────────────
 
