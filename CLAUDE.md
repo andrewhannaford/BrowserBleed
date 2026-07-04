@@ -199,13 +199,14 @@ gh run list --limit 1
 gh run view <run-id>
 
 # If tests fail, DO NOT close the issue. Debug locally first:
-python3 test_sessiontest.py    # run tests directly
-pytest test_sessiontest.py -v  # run via pytest (may have encoding issues due to UTF-8 wrapping)
+python3 -m pytest tests/ -v          # full suite (CI command)
+python3 -m pytest tests/test_sessiontest.py -v   # sessiontest only
+python3 -m pytest tests/test_linux.py -v       # Linux extractor (Unix only)
 ```
 
 **Why**: Tests run on push. Failures = broken main branch. Fix locally before considering work done.
 
 **Common issues to watch**:
-- UTF-8 encoding conflicts with sys.stdout wrapping (use direct `python3 test_sessiontest.py`)
+- Linux extractor tests skip on Windows (`BrowserBleed_linux` requires `os.geteuid`)
 - Import errors from recent changes
 - Test data becoming stale (tokens expire, services change APIs)

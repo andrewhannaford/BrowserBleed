@@ -1145,8 +1145,12 @@ BANNER = """\
 def main():
     global _timeout, _ssl_ctx
 
-    # Ensure UTF-8 output on Windows (skip if already wrapped)
-    if sys.platform == "win32" and not isinstance(sys.stdout, io.TextIOWrapper):
+    # Ensure UTF-8 output on Windows (skip if already wrapped or not a real stream)
+    if (
+        sys.platform == "win32"
+        and not isinstance(sys.stdout, io.TextIOWrapper)
+        and hasattr(sys.stdout, "buffer")
+    ):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
     parser = argparse.ArgumentParser(

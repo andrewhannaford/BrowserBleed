@@ -974,13 +974,23 @@ All Firefox-family browsers are deduped — if two browsers share the same profi
 # Install dependencies
 pip3 install cryptography pytest
 
-# Run the test suite (412 tests — covers all three extractors + sessiontest.py)
-python3 -m pytest tests.py -v
+# Run the full test suite (sessiontest + all three extractors)
+python3 -m pytest tests/ -v
 
-# Windows API tests (process enumeration, memory scraping) are automatically
+# Linux extractor tests are skipped on Windows; Windows API tests are
 # skipped on Linux/macOS. Playwright tests require:
 #   pip3 install playwright && python3 -m playwright install chromium
 ```
+
+Test layout:
+
+| File | Covers |
+|------|--------|
+| `tests/test_sessiontest.py` | Core sessiontest.py (HTTP helpers, dispatch, main) |
+| `tests/test_sessiontest_routing.py` | Extended routing + Discord/Spotify/LinkedIn/etc. |
+| `tests/test_linux.py` | BrowserBleed_linux.py (Unix only) |
+| `tests/test_mac.py` | BrowserBleed_mac.py |
+| `tests/test_win.py` | BrowserBleed.py |
 
 CI runs automatically on every push and PR via GitHub Actions (`.github/workflows/tests.yml`).
 
