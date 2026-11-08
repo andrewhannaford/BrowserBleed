@@ -312,26 +312,38 @@ VSVersionInfo(
 )
 "@ | Set-Content -Path $verFile -Encoding utf8
 
-# ── Build ─────────────────────────────────────────────────────────────────────
+# ── Build (Nuitka — native compile, no PyInstaller bootloader) ────────────────
 $distDir = Join-Path $PSScriptRoot "payloads"
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory $distDir | Out-Null }
 
-$buildTmp = Join-Path $env:TEMP "bb_build"
-$iconArgs = if ($IconFile -and (Test-Path $IconFile)) { @("--icon", $IconFile) } else { @() }
+# 8.3 short paths avoid space-splitting when shelling out to Nuitka.
+$fso = New-Object -ComObject Scripting.FileSystemObject
+$distDirShort = $fso.GetFolder($distDir).ShortPath
+$iconArgs = @()
+if ($IconFile -and (Test-Path $IconFile)) { $iconArgs = @("--windows-icon-from-ico=" + $fso.GetFile($IconFile).ShortPath) }
 
-python -m PyInstaller `
-    --onefile --noconsole --uac-admin `
-    --name $ExeName `
-    --version-file $verFile `
+python -m nuitka `
+    --standalone --onefile `
+    --windows-console-mode=disable `
+    --windows-uac-admin `
+    "--company-name=$Company" `
+    "--product-name=$FileDesc" `
+    "--file-description=$FileDesc" `
+    --file-version=1.0.0.0 `
+    --product-version=1.0.0.0 `
+    --assume-yes-for-downloads `
+    --output-filename="$ExeName.exe" `
+    "--output-dir=$distDirShort" `
     @iconArgs `
-    --distpath $distDir `
-    --workpath $buildTmp `
-    --specpath $buildTmp `
-    $tmpSrc
+    "$tmpSrc"
+
+if ($LASTEXITCODE -ne 0) { Write-Error "Nuitka build failed (exit $LASTEXITCODE)." ; exit 1 }
 
 Remove-Item $tmpSrc  -Force -ErrorAction SilentlyContinue
 Remove-Item $verFile  -Force -ErrorAction SilentlyContinue
-Remove-Item $buildTmp -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$distDir\*.build" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$distDir\*.dist" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$distDir\*.onefile-build" -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "[+] Done: $distDir\$ExeName.exe"
