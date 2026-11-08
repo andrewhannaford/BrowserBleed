@@ -34,19 +34,6 @@ jobs:
           EXFIL_KEY: ${{ secrets.BB_API_KEY }}
         run: |
           export PATH="$(brew --prefix)/bin:$PATH"
-          echo "== python diagnostic =="
-          which python python3 python3.12 2>&1 || true
-          python --version 2>&1 || true
-          python3 --version 2>&1 || true
-          # setup-python exposes 'python'; link it as python3/python3.12 for build_mac.sh
-          mkdir -p "$RUNNER_TEMP/bin"
-          PYBIN="$(python -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
-          if [ -n "$PYBIN" ]; then
-            ln -sf "$PYBIN" "$RUNNER_TEMP/bin/python3"
-            ln -sf "$PYBIN" "$RUNNER_TEMP/bin/python3.12"
-            echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-            export PATH="$RUNNER_TEMP/bin:$PATH"
-          fi
           chmod +x build_mac.sh
           for p in chrome edge brave firefox opera slack discord teams zoom whatsapp telegram; do
             echo "=== BUILDING $p ==="

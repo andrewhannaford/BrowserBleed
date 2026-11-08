@@ -101,8 +101,9 @@ func detectPlatform(name, filePath string) string {
 	if _, err := io.ReadFull(f, magic); err != nil {
 		return "linux"
 	}
-	// Mach-O: FE ED FA CE (32-bit), FE ED FA CF (64-bit), CA FE BA BE (fat)
-	if (magic[0] == 0xFE && magic[1] == 0xED && magic[2] == 0xFA && (magic[3] == 0xCE || magic[3] == 0xCF)) ||
+	// Mach-O (little-endian): CE FA ED FE (32-bit), CF FA ED FE (64-bit); CA FE BA BE (fat)
+	if (magic[0] == 0xCE && magic[1] == 0xFA && magic[2] == 0xED && magic[3] == 0xFE) ||
+		(magic[0] == 0xCF && magic[1] == 0xFA && magic[2] == 0xED && magic[3] == 0xFE) ||
 		(magic[0] == 0xCA && magic[1] == 0xFE && magic[2] == 0xBA && magic[3] == 0xBE) {
 		return "mac"
 	}
