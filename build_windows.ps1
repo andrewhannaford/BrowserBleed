@@ -345,6 +345,25 @@ Remove-Item "$distDir\*.build" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "$distDir\*.dist" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "$distDir\*.onefile-build" -Recurse -Force -ErrorAction SilentlyContinue
 
+# ── Sign (optional — set BB_SIGN_CERT to a cert thumbprint or a .pfx path) ────
+if ($env:BB_SIGN_CERT) {
+    $signtool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
+    if (-not (Test-Path $signtool)) {
+        $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -Last 1 -ExpandProperty FullName)
+    }
+    $signArgs = @("sign", "/fd", "SHA256", "/tr", "http://timestamp.digicert.com", "/td", "SHA256")
+    if (Test-Path $env:BB_SIGN_CERT) {
+        $signArgs += @("/f", $env:BB_SIGN_CERT)
+        if ($env:BB_SIGN_PFX_PASS) { $signArgs += @("/p", $env:BB_SIGN_PFX_PASS) }
+    } else {
+        $signArgs += @("/sha1", $env:BB_SIGN_CERT)
+    }
+    $signArgs += @("$distDirShort\$ExeName.exe")
+    & $signtool @signArgs
+    if ($LASTEXITCODE -ne 0) { Write-Error "signtool failed (exit $LASTEXITCODE)"; exit 1 }
+    Write-Host "[+] Signed: $ExeName.exe"
+}
+
 Write-Host ""
 Write-Host "[+] Done: $distDir\$ExeName.exe"
 Write-Host "    Drop and run - results auto-exfil to $ExfilUrl"
