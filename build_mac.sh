@@ -177,7 +177,7 @@ if [[ -z "$PYTHON" ]]; then
 fi
 
 echo "[*] Installing Python packages (cryptography, pyinstaller)..."
-"$PYTHON" -m pip install --quiet --upgrade cryptography nuitka
+"$PYTHON" -m pip install --quiet --upgrade cryptography nuitka zstandard
 echo "[+] Python packages ready"
 echo ""
 
