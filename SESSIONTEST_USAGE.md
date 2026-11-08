@@ -86,7 +86,7 @@ A PowerShell wrapper script is available for convenience:
 
 **Server → Downloads → sessiontest:**
 
-1. Export report from `reports.andrewhannaford.com` → Downloads as ZIP
+1. Export report from `browserbleed.lanarchy.net` → Downloads as ZIP
 2. Run `python3 sessiontest.py` in any directory
 3. Script auto-finds and tests credentials
 
