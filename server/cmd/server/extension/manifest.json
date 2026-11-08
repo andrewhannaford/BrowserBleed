@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "BrowserBleed Session Opener",
+  "version": "1.0.0",
+  "description": "Open browser sessions captured by BrowserBleed in a new tab.",
+  "permissions": ["cookies"],
+  "host_permissions": ["*://*/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://browserbleed.lanarchy.net/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

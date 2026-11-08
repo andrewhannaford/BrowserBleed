@@ -1194,7 +1194,7 @@ def main():
     cred_rows:    list[dict] = []
     for row in rows:
         label_lo = row.get("label", "").lower()
-        if "cookie" in label_lo:
+        if label_lo == "cookie" or label_lo == "cookie header":
             if label_lo == "cookie header":
                 continue  # raw Chrome error-count string, not a real session cookie
             cookie_rows.append(row)

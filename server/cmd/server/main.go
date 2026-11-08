@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"embed"
 	"flag"
 	"io/fs"
@@ -14,6 +15,37 @@ import (
 
 //go:embed web
 var webFS embed.FS
+
+//go:embed extension
+var extFS embed.FS
+
+func serveExtensionZip(w http.ResponseWriter, r *http.Request) {
+	entries, err := fs.ReadDir(extFS, "extension")
+	if err != nil {
+		http.Error(w, "extension not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="browserbleed-extension.zip"`)
+
+	zw := zip.NewWriter(w)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, err := fs.ReadFile(extFS, "extension/"+e.Name())
+		if err != nil {
+			continue
+		}
+		f, err := zw.Create(e.Name())
+		if err != nil {
+			continue
+		}
+		f.Write(data)
+	}
+	zw.Close()
+}
 
 func main() {
 	addr    := flag.String("addr",     ":8080",                os.Getenv("ADDR"))
@@ -51,6 +83,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
+	mux.HandleFunc("/extension.zip", serveExtensionZip)
 
 	log.Printf("bb-reports listening on %s, data=%s, ttl=%s", *addr, *dataDir, *ttl)
 	if err := http.ListenAndServe(*addr, mux); err != nil {

@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -650,6 +651,8 @@ func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
 			h.handleReportDelete(w, r, id)
 		case "test":
 			h.handleReportTest(w, r, id)
+		case "cookies":
+			h.handleReportCookies(w, r, id)
 		default:
 			http.NotFound(w, r)
 		}
@@ -794,6 +797,80 @@ func (h *Handler) runReportTest(id, csvPath string) {
 	}
 	job.Status = "done"
 	job.Results = results
+}
+
+func (h *Handler) handleReportCookies(w http.ResponseWriter, r *http.Request, id string) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+	domain := r.URL.Query().Get("domain")
+	if domain == "" {
+		http.Error(w, "domain required", http.StatusBadRequest)
+		return
+	}
+
+	enc, err := os.ReadFile(filepath.Join(h.dataDir, id, "results.csv.enc"))
+	if err != nil {
+		http.Error(w, "report has no CSV", http.StatusUnprocessableEntity)
+		return
+	}
+	plain, err := decrypt(h.encKey, enc)
+	if err != nil {
+		http.Error(w, "decryption failed", http.StatusInternalServerError)
+		return
+	}
+
+	reader := csv.NewReader(bytes.NewReader(plain))
+	records, err := reader.ReadAll()
+	if err != nil || len(records) == 0 {
+		http.Error(w, "csv parse error", http.StatusInternalServerError)
+		return
+	}
+
+	col := map[string]int{}
+	for i, name := range records[0] {
+		col[name] = i
+	}
+	get := func(rec []string, name string) string {
+		if i, ok := col[name]; ok && i < len(rec) {
+			return rec[i]
+		}
+		return ""
+	}
+
+	type cookie struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	cookies := []cookie{}
+	seen := map[string]bool{}
+	for _, rec := range records[1:] {
+		label := strings.ToLower(strings.TrimSpace(get(rec, "label")))
+		if label != "cookie" {
+			continue
+		}
+		d := get(rec, "service")
+		if d == "" {
+			d = get(rec, "address")
+		}
+		if d != domain {
+			continue
+		}
+		raw := get(rec, "value")
+		name, val := raw, ""
+		if i := strings.IndexByte(raw, '='); i >= 0 {
+			name, val = raw[:i], raw[i+1:]
+		}
+		key := name + "\x00" + val
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		cookies = append(cookies, cookie{Name: strings.TrimSpace(name), Value: strings.TrimSpace(val)})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"domain": domain, "cookies": cookies})
 }
 
 func (h *Handler) handleDeleteBulk(w http.ResponseWriter, r *http.Request) {
