@@ -61,7 +61,7 @@ _find_or_install_python() {
     for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
         if command -v "$candidate" &>/dev/null; then
             local ver
-            ver=$("$candidate" -c 'import sys; print(sys.version_info.major * 10 + sys.version_info.minor)' 2>/dev/null) || continue
+            ver=$("$candidate" -c 'import sys; print(sys.version_info.major * 100 + sys.version_info.minor)' 2>/dev/null) || continue
             if (( ver >= 310 )); then
                 PYTHON="$candidate"
                 echo "[+] Found $($candidate --version)"
