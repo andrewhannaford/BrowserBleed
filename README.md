@@ -13,11 +13,9 @@ Authorized red team tool for extracting credentials, session tokens, and cookies
 git clone https://github.com/andrewhannaford/BrowserBleed && cd BrowserBleed
 pip3 install cryptography
 
-# 2. Deploy the report server (one time — needs AWS CLI + a domain in Route 53)
+# 2. Deploy the report server (one time — Docker container behind Traefik)
 cp deploy/config.example deploy/config   # fill in DOMAIN, BB_API_KEY, ENCRYPTION_KEY
-bash deploy/provision.sh                 # spin up EC2, configure nginx + TLS
-bash deploy/setup-server.sh
-bash deploy/deploy-binary.sh             # cross-compile and deploy the Go binary
+bash deploy/deploy-homelab.sh            # build linux/amd64 binary + deploy to docker-svc
 
 # 3. Build a payload for your target platform and upload it to the server
 .\build_windows.ps1 -Preset chrome -Upload    # Windows (PowerShell)
@@ -600,42 +598,38 @@ The server is designed to handle highly sensitive data. Three layers of protecti
 | Layer | Mechanism |
 |-------|-----------|
 | **Encryption at rest** | Every report is encrypted with AES-256-GCM before touching disk. A separate `ENCRYPTION_KEY` (distinct from the API key) is used. `.enc` files only — no plaintext ever written. `meta.json` (hostname, timestamps, hit count — no credential values) is stored unencrypted for index building. |
-| **Auth** | Browser access via `POST /login` form → HttpOnly session cookie (no query params, never in logs). Programmatic upload via `Authorization: Bearer` header only. `/login` has `access_log off` in nginx so the key is never logged. |
+| **Auth** | Browser access via `POST /login` form → HttpOnly session cookie (no query params, never in logs). Programmatic upload via `Authorization: Bearer` header only. The `Authorization` header is redacted in Traefik's access log so the key is never logged. |
 | **Auto-expiry** | Reports are deleted after a configurable TTL (default 24h). A background goroutine runs every 15 minutes. Expiry time is shown in the report view. |
 
-> **Honest limitation:** If the EC2 is fully compromised with root access, an attacker can read `ENCRYPTION_KEY` from `/opt/bb-reports/.env` and decrypt stored reports. The TTL limits the blast radius to whatever was uploaded in the last day.
+> **Honest limitation:** If the docker-svc host is fully compromised with root access, an attacker can read `ENCRYPTION_KEY` from the container environment and decrypt stored reports. The TTL limits the blast radius to whatever was uploaded in the last day.
 
 ### Deploying the report server
 
-Prerequisites: AWS CLI authenticated, Route 53 hosted zone for your domain, Go 1.22+.
+The server runs as a Docker container (`browserbleed`) on `docker-svc`, behind Traefik at `browserbleed.lanarchy.net`.
+
+Prerequisites: Go 1.22+ and SSH access to `docker-svc` (10.20.0.193).
 
 ```bash
 # 1. Configure your deployment
 cp deploy/config.example deploy/config
-# Edit deploy/config with your domain, email, region, etc.
+# Edit deploy/config with your domain and keys.
 
-# 2. Spin up the EC2 instance
-bash deploy/provision.sh
-
-# 3. Wait ~60s, then configure nginx + TLS
-bash deploy/setup-server.sh
-
-# 4. Build and deploy the server binary
-bash deploy/deploy-binary.sh
+# 2. Build + deploy the binary (cross-compile, scp, restart the container)
+bash deploy/deploy-homelab.sh
 ```
 
-`setup-server.sh` creates `/opt/bb-reports/.env` (mode 600) on the server from the values in `deploy/config`:
+The container's environment and Traefik routing live in `lanarchy-traefik/docker-compose.yml`:
 
 | Variable | Purpose |
 |----------|---------|
-| `API_KEY` | Shared between BrowserBleed `--exfil-key` and the browser login form |
+| `API_KEY` | Shared between BrowserBleed `--exfil-key`, the browser login form, and the build agent |
 | `ENCRYPTION_KEY` | 64-char hex AES-256 key — generate with `openssl rand -hex 32` |
-| `BASE_URL` | Public URL of the server (e.g. `https://reports.yourdomain.com`) |
-| `REPORT_TTL` | How long reports are kept (e.g. `24h`, `72h`) |
+| `BASE_URL` | Public URL of the server (e.g. `https://browserbleed.lanarchy.net`) |
+| `REPORT_TTL` | How long reports are kept (default `24h`) |
 
 To update the binary after code changes:
 ```bash
-bash deploy/deploy-binary.sh   # rebuilds, uploads, restarts service
+bash deploy/deploy-homelab.sh   # rebuild, upload, restart the container
 ```
 
 ### Server endpoints
