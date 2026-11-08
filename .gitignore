@@ -58,3 +58,6 @@ dist/
 # macOS
 .DS_Store
 stolen_profile/
+
+nul
+
