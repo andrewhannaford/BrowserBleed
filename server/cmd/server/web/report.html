@@ -166,12 +166,12 @@
     </div>
   </div>
 
+  <div id="test-results" hidden></div>
+
   <div class="report-section">
     <div class="section-label">Report Output</div>
     <pre>{{.Content}}</pre>
   </div>
-
-  <div id="test-results" hidden></div>
 </div>
 
 <script>
@@ -184,6 +184,7 @@ async function runTest() {
   btn.textContent = 'Testing…';
   box.hidden = false;
   box.innerHTML = '<div class="test-status">Testing credentials (can take a minute or two)…</div>';
+  box.scrollIntoView({ behavior: 'smooth' });
 
   try {
     await fetch('/r/' + id + '/test', { method: 'POST' });
@@ -223,6 +224,7 @@ function renderResults(results) {
   });
   html += '</tbody></table>';
   box.innerHTML = html;
+  box.scrollIntoView({ behavior: 'smooth' });
 }
 
 function escapeHtml(s) {
