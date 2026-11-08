@@ -352,12 +352,30 @@ def sqlite_execute(conn: sqlite3.Connection, query: str, retries: int = 8, delay
 
 
 def copy_db_with_wal(src: str) -> str:
-    """Copy a SQLite DB and its -wal/-shm companions to a temp dir.
-    Tries shared-read copy first; falls back to VSS if the file is exclusively locked.
-    Returns the path to the copied DB file; caller must rmtree the parent dir.
+    """Return a consistent snapshot of a (possibly WAL-mode, possibly locked) SQLite DB.
+    Uses the SQLite backup API first (replays the -wal atomically), then falls back to
+    file-copy + VSS if the DB is exclusively locked.
     """
     tmp_dir = tempfile.mkdtemp()
     db_name = os.path.basename(src)
+    tmp_db  = os.path.join(tmp_dir, db_name)
+
+    # 1. SQLite backup API — consistent snapshot of a WAL-mode DB.
+    try:
+        uri = "file:" + src.replace("\\", "/") + "?mode=ro"
+        src_conn = sqlite3.connect(uri, uri=True, timeout=3.0)
+        dst_conn = sqlite3.connect(tmp_db)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+            src_conn.close()
+        return tmp_db
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # 2. Fall back to file copy + WAL companions (+ VSS if exclusively locked).
+    tmp_dir = tempfile.mkdtemp()
     tmp_db  = os.path.join(tmp_dir, db_name)
 
     main_copy = None
@@ -811,12 +829,13 @@ _FIREFOX_SPECS_WIN: list[tuple[str, str, list[str]]] = [
 def _resolve_ff_profiles_dir_win(candidates: list[str]) -> str | None:
     return next((p for p in candidates if os.path.isdir(p)), None)
 
-def _extract_moz_cookies_win(profiles_dir: str, browser_name: str) -> list[dict]:
+def _extract_moz_cookies_win(profiles_dir: str, browser_name: str) -> tuple[list[dict], list[str]]:
     results = []
+    errors  = []
     try:
         entries = os.listdir(profiles_dir)
-    except OSError:
-        return results
+    except OSError as e:
+        return results, [f"cannot list {profiles_dir}: {e}"]
     for profile_name in entries:
         db_path = os.path.join(profiles_dir, profile_name, "cookies.sqlite")
         if not os.path.exists(db_path):
@@ -841,15 +860,124 @@ def _extract_moz_cookies_win(profiles_dir: str, browser_name: str) -> list[dict]
                         "secure": bool(secure), "httponly": bool(httponly),
                         "samesite": samesite_str,
                     })
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"{profile_name}: query failed: {e}")
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            errors.append(f"{profile_name}: {e}")
         finally:
             if tmp_dir:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
-    return results
+    return results, errors
+
+
+# ── Firefox saved logins (logins.json + key4.db) ────────────────────────────────
+def _ff_crypt(key: bytes, iv: bytes, ct: bytes) -> bytes:
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.ciphers.algorithms import TripleDES
+    if len(key) == 24:
+        cipher = Cipher(TripleDES(key), modes.CBC(iv))
+    else:
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    dec = cipher.decryptor()
+    return dec.update(ct) + dec.finalize()
+
+
+def _ff_key_from_key4db(key4db_path: str) -> bytes:
+    conn = sqlite_connect(key4db_path)
+    try:
+        rows = sqlite_execute(conn, "SELECT item1 FROM metaData WHERE id = 'password'")
+        if not rows or not rows[0][0]:
+            return b""
+        item1 = bytes(rows[0][0])
+    finally:
+        conn.close()
+    if not item1:
+        return b""
+    return dpapi_decrypt(item1)
+
+
+def _ff_login_iv_ct(data: bytes) -> tuple[bytes, bytes]:
+    def tlv(i):
+        tag = data[i]; i += 1
+        ln = data[i]; i += 1
+        if ln & 0x80:
+            n = ln & 0x7F
+            ln = int.from_bytes(data[i:i + n], "big"); i += n
+        return tag, i, ln
+    i = 0
+    _, i, _ = tlv(i)              # outer SEQUENCE
+    _, i, _ = tlv(i)              # inner SEQUENCE
+    _, i, salt_len = tlv(i)       # entry salt
+    i += salt_len
+    _, i, iv_len = tlv(i)         # iv
+    iv = data[i:i + iv_len]; i += iv_len
+    _, i, ct_len = tlv(i)         # ciphertext
+    return iv, data[i:i + ct_len]
+
+
+def _ff_decode_value(plaintext: bytes) -> str:
+    if not plaintext:
+        return ""
+    for tag in (0x0c, 0x04, 0x13, 0x16):
+        idx = plaintext.find(bytes([tag]))
+        if idx >= 0 and idx + 2 <= len(plaintext):
+            ln = plaintext[idx + 1]
+            if 0 < ln <= len(plaintext) - idx - 2:
+                try:
+                    return plaintext[idx + 2: idx + 2 + ln].decode("utf-8")
+                except Exception:
+                    pass
+    return plaintext.decode("utf-8", errors="replace").rstrip("\x00")
+
+
+def _extract_moz_logins_win(profiles_dir: str, browser_name: str) -> tuple[list[dict], list[str]]:
+    logins = []
+    errors = []
+    try:
+        entries = os.listdir(profiles_dir)
+    except OSError as e:
+        return logins, [f"cannot list {profiles_dir}: {e}"]
+    for profile_name in entries:
+        prof_dir = os.path.join(profiles_dir, profile_name)
+        logins_path = os.path.join(prof_dir, "logins.json")
+        key4_path = os.path.join(prof_dir, "key4.db")
+        if not os.path.exists(logins_path):
+            continue
+        try:
+            with open(logins_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            errors.append(f"{profile_name}: logins.json: {e}")
+            continue
+        key = b""
+        if os.path.exists(key4_path):
+            try:
+                key = _ff_key_from_key4db(key4_path)
+            except Exception as e:
+                errors.append(f"{profile_name}: key4.db: {e}")
+        if not key:
+            errors.append(f"{profile_name}: no decryptable key (Primary Password may be set)")
+            continue
+        try:
+            for entry in data.get("logins", []):
+                host = entry.get("hostname", "")
+                enc_user = entry.get("encryptedUsername", "")
+                enc_pass = entry.get("encryptedPassword", "")
+                try:
+                    u_blob = base64.b64decode(enc_user)
+                    p_blob = base64.b64decode(enc_pass)
+                    username = _ff_decode_value(_ff_crypt(key, *_ff_login_iv_ct(u_blob)))
+                    password = _ff_decode_value(_ff_crypt(key, *_ff_login_iv_ct(p_blob)))
+                    logins.append({
+                        "browser": browser_name, "profile": profile_name,
+                        "url": host, "username": username, "password": password,
+                    })
+                except Exception as e:
+                    errors.append(f"{profile_name}: entry decode: {e}")
+        except Exception as e:
+            errors.append(f"{profile_name}: {e}")
+    return logins, errors
 
 
 # ── Firefox cookie extraction ──────────────────────────────────────────────────
@@ -2218,7 +2346,7 @@ def main():
         if do_disk:
             lines.append("\n  -- [DISK] Cookies --")
             try:
-                cookies = _extract_moz_cookies_win(ff_dir, ff_name)
+                cookies, ff_errors = _extract_moz_cookies_win(ff_dir, ff_name)
                 if cookies:
                     lines.append(f"[+] {len(cookies)} cookie(s) across all profiles\n")
                     for ck in cookies:
@@ -2232,10 +2360,35 @@ def main():
                             "label": "Cookie", "service": ck["host"],
                             "value": f"{ck['name']}={ck['value']}", "address": ck["host"],
                         })
+                elif ff_errors:
+                    for err in ff_errors:
+                        lines.append(f"  [-] {err}")
                 else:
                     lines.append("  [-] No cookies found")
             except Exception as e:
                 lines.append(f"  [-] Cookie extraction error: {e}")
+
+            lines.append("\n  -- [DISK] Saved Logins --")
+            try:
+                logins, ff_login_errors = _extract_moz_logins_win(ff_dir, ff_name)
+                if logins:
+                    lines.append(f"[+] {len(logins)} login(s)\n")
+                    for lg in logins:
+                        lines.append(f"  URL:      {lg['url']}")
+                        lines.append(f"  Username: {lg['username']}")
+                        lines.append(f"  Password: {lg['password']}\n")
+                        all_csv_rows.append({
+                            "browser": ff_name, "profile": lg["profile"],
+                            "label": "Password", "service": lg["url"],
+                            "value": f"{lg['username']}:{lg['password']}", "address": lg["url"],
+                        })
+                elif ff_login_errors:
+                    for err in ff_login_errors:
+                        lines.append(f"  [-] {err}")
+                else:
+                    lines.append("  [-] No saved logins found")
+            except Exception as e:
+                lines.append(f"  [-] Login extraction error: {e}")
 
     # ── Electron / Desktop apps ───────────────────────────────────────────────
     if do_memory:
