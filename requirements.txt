@@ -1,9 +1,10 @@
 # Required — AES decryption for all three extractors
 cryptography>=41.0
 
-# Required for building standalone binaries (build_*.sh / build_windows.ps1)
+# Required for building standalone binaries (build_windows.ps1 uses Nuitka)
 # Not needed to run the Python source directly
-pyinstaller>=6.0
+nuitka>=4.0
+imageio>=2.0   # Nuitka uses imageio to convert PNG (non-.ico) icon files
 
 # Optional — enables browser session replay in sessiontest.py (--browser flag)
 # After installing: python3 -m playwright install chromium

