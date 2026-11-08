@@ -60,32 +60,23 @@ Upload any pre-built binary via `/payloads` → Manual Upload section.
 
 ## Deploying the server
 
-**No PEM file needed.** Uses EC2 Instance Connect (temporary SSH key via AWS API).
+The report server runs as a Docker container (`browserbleed`) on `docker-svc` (10.20.0.193),
+routed by Traefik at `browserbleed.lanarchy.net`. No AWS involved.
 
 ```bash
-# 1. Ensure AWS SSO is active
-aws sso login          # only needed if session expired; check with: aws sts get-caller-identity
-
-# 2. Deploy
-bash deploy/deploy-binary.sh
+# Build the Go binary for linux/amd64, SCP it to docker-svc, and restart the container
+bash deploy/deploy-homelab.sh
 ```
 
-The script: cross-compiles the Go binary for linux/amd64, pushes a 60-second temp SSH key
-via `aws ec2-instance-connect send-ssh-public-key`, SCPs the binary, then restarts `bb-reports.service`.
-
-### EC2 instance details
-- Instance ID: `i-07858942216308614`
-- Public IP: `44.218.12.230`
-- Domain: `reports.andrewhannaford.com`
-- OS user: `ec2-user`
-- Service: `bb-reports.service` (systemd), binary at `/opt/bb-reports/server`
-- IAM profile: `bb-reports-ec2` (AmazonSSMManagedInstanceCore + S3ReadOnly)
-
-### If SSO session is expired
-```
-aws sso login
-```
-Then re-run the deploy script. No other credentials needed.
+### Server details
+- Host: `docker-svc@10.20.0.193` (SSH key `~/.ssh/id_ed25519`)
+- Domain: `browserbleed.lanarchy.net`
+- Binary: `/opt/docker/services/browserbleed/server` (mounted `:ro` at `/opt/server`)
+- Data: `/opt/docker/services/browserbleed/data` (mounted at `/opt/bb-reports/data`)
+- Env (`API_KEY`, `ENCRYPTION_KEY`, `BASE_URL`, `ADDR`) + Traefik routing live in
+  `lanarchy-traefik/docker-compose.yml` (the `browserbleed` service)
+- Proxy: `/upload`, `/p/*`, `/builds`, and `POST /payloads` bypass OIDC; everything
+  else (UI / reports) sits behind Pocket ID
 
 ## Server endpoints
 
