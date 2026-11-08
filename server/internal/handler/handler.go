@@ -23,10 +23,12 @@ import (
 	"net/smtp"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -167,6 +169,14 @@ type Handler struct {
 	guideBuildTpl       *template.Template
 	guideDeliveryTpl    *template.Template
 	guideSessionTestTpl *template.Template
+	testMu              sync.Mutex
+	testJobs            map[string]*reportTestJob
+}
+
+type reportTestJob struct {
+	Status  string           `json:"status"`
+	Results []map[string]any `json:"results,omitempty"`
+	Error   string           `json:"error,omitempty"`
 }
 
 func deriveKey(hexKey string) ([]byte, error) {
@@ -301,6 +311,7 @@ func New(apiKey, encKeyHex, dataDir, baseURL string, ttl time.Duration, webFS fs
 		guideBuildTpl:       guideBuildTpl,
 		guideDeliveryTpl:    guideDeliveryTpl,
 		guideSessionTestTpl: guideSessionTestTpl,
+		testJobs:            make(map[string]*reportTestJob),
 	}, nil
 }
 
@@ -637,6 +648,8 @@ func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
 			h.serveDecrypted(w, r, filepath.Join(dir, "results.csv.enc"), "text/csv; charset=utf-8", "bb_results.csv")
 		case "delete":
 			h.handleReportDelete(w, r, id)
+		case "test":
+			h.handleReportTest(w, r, id)
 		default:
 			http.NotFound(w, r)
 		}
@@ -688,6 +701,99 @@ func (h *Handler) serveDecrypted(w http.ResponseWriter, r *http.Request, encPath
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Write(plain)
+}
+
+func (h *Handler) handleReportTest(w http.ResponseWriter, r *http.Request, id string) {
+	if !h.requireAuth(w, r) {
+		return
+	}
+
+	h.testMu.Lock()
+	job := h.testJobs[id]
+	h.testMu.Unlock()
+
+	switch r.Method {
+	case http.MethodPost:
+		if job != nil && job.Status == "running" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(job)
+			return
+		}
+		enc, err := os.ReadFile(filepath.Join(h.dataDir, id, "results.csv.enc"))
+		if err != nil {
+			http.Error(w, "report has no CSV to test", http.StatusUnprocessableEntity)
+			return
+		}
+		csvPlain, err := decrypt(h.encKey, enc)
+		if err != nil {
+			http.Error(w, "decryption failed", http.StatusInternalServerError)
+			return
+		}
+		tmp, err := os.CreateTemp("", "bb-test-*.csv")
+		if err != nil {
+			http.Error(w, "temp file error", http.StatusInternalServerError)
+			return
+		}
+		if _, err := tmp.Write(csvPlain); err != nil {
+			tmp.Close()
+			os.Remove(tmp.Name())
+			http.Error(w, "temp write error", http.StatusInternalServerError)
+			return
+		}
+		tmp.Close()
+
+		h.testMu.Lock()
+		h.testJobs[id] = &reportTestJob{Status: "running"}
+		h.testMu.Unlock()
+
+		go h.runReportTest(id, tmp.Name())
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(&reportTestJob{Status: "running"})
+
+	case http.MethodGet:
+		if job == nil {
+			job = &reportTestJob{Status: "idle"}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(job)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) runReportTest(id, csvPath string) {
+	defer os.Remove(csvPath)
+
+	cmd := exec.Command("python3", "/opt/sessiontest.py", csvPath, "--json")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+
+	h.testMu.Lock()
+	defer h.testMu.Unlock()
+	job := h.testJobs[id]
+	if job == nil {
+		return
+	}
+	if err != nil {
+		job.Status = "error"
+		job.Error = strings.TrimSpace(stderr.String())
+		if job.Error == "" {
+			job.Error = err.Error()
+		}
+		return
+	}
+	var results []map[string]any
+	if err := json.Unmarshal(out, &results); err != nil {
+		job.Status = "error"
+		job.Error = "failed to parse sessiontest output: " + err.Error()
+		return
+	}
+	job.Status = "done"
+	job.Results = results
 }
 
 func (h *Handler) handleDeleteBulk(w http.ResponseWriter, r *http.Request) {
