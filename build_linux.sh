@@ -209,7 +209,7 @@ install_deps() {
             }
         }
     fi
-    "$PYTHON" -m pip install --quiet --upgrade cryptography nuitka
+    "$PYTHON" -m pip install --quiet --upgrade cryptography nuitka zstandard
     echo "[+] Python packages ready"
     echo ""
 }
