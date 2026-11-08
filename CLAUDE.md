@@ -69,7 +69,7 @@ bash deploy/deploy-homelab.sh
 ```
 
 ### Server details
-- Host: `docker-svc@10.20.0.193` (SSH key `~/.ssh/id_ed25519`)
+- Host: `docker-svc@10.20.0.193` (SSH key `~/.ssh/bb_deploy`, passphrase-less — not `id_ed25519`, which is tied to 1Password and triggers prompts)
 - Domain: `browserbleed.lanarchy.net`
 - Binary: `/opt/docker/services/browserbleed/server` (mounted `:ro` at `/opt/server`)
 - Data: `/opt/docker/services/browserbleed/data` (mounted at `/opt/bb-reports/data`)
