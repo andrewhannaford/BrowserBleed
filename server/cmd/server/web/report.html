@@ -89,6 +89,14 @@
   .badge.error { background: rgba(248,81,73,0.15); color: var(--red); }
   .badge.info { background: rgba(90,100,120,0.2); color: var(--text-dim); }
   .mono { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); word-break: break-all; }
+  .test-group { margin-top: 10px; }
+  .test-toggle { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit; text-align: left; transition: border-color 0.12s; }
+  .test-toggle:hover:not([disabled]) { border-color: var(--border-hover); background: rgba(255,255,255,0.03); }
+  .test-toggle[disabled] { cursor: default; }
+  .test-count { color: var(--text-dim); font-weight: 500; }
+  .test-toggle-caret { margin-left: auto; color: var(--text-dim); font-size: 12px; }
+  .test-group-body { margin-top: 6px; }
+  .test-group-body[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -210,21 +218,56 @@ function renderResults(results) {
     box.innerHTML = '<div class="test-status">No testable credentials found in this report.</div>';
     return;
   }
-  var counts = {};
-  results.forEach(function(r){ counts[r.status] = (counts[r.status] || 0) + 1; });
-  var summary = Object.keys(counts).map(function(k){ return k + ': ' + counts[k]; }).join(' · ');
+
+  var order = ['valid', 'expired', 'invalid', 'error', 'info'];
+  var labels = { valid: 'Valid tokens', expired: 'Expired', invalid: 'Invalid', error: 'Errors', info: 'Session IDs / other' };
+  var groups = {};
+  results.forEach(function(r){ var s = r.status || 'info'; (groups[s] = groups[s] || []).push(r); });
+
   var html = '<div class="section-label">Credential Test Results</div>';
-  html += '<div class="test-status">' + escapeHtml(summary) + '</div>';
-  html += '<table class="test-table"><thead><tr><th>Status</th><th>Service</th><th>Identity</th><th>Access / Detail</th></tr></thead><tbody>';
-  results.forEach(function(r){
-    html += '<tr><td><span class="badge ' + escapeHtml(r.status) + '">' + escapeHtml(r.status) + '</span></td>'
+  var parts = order.filter(function(s){ return groups[s] && groups[s].length; })
+                   .map(function(s){ return s + ': ' + groups[s].length; });
+  html += '<div class="test-status">' + escapeHtml(parts.join(' · ')) + '</div>';
+
+  order.forEach(function(s){
+    var arr = groups[s] || [];
+    if (!arr.length) return;
+    var open = (s === 'valid');
+    html += '<div class="test-group">';
+    html += '<button class="test-toggle" type="button"' + (open ? ' disabled' : '') + '>'
+         + '<span class="badge ' + s + '">' + s + '</span> '
+         + '<b>' + labels[s] + '</b> <span class="test-count">(' + arr.length + ')</span>'
+         + (open ? '' : '<span class="test-toggle-caret">▸ show</span>')
+         + '</button>';
+    html += '<div class="test-group-body"' + (open ? '' : ' hidden') + '>' + buildTable(arr) + '</div>';
+    html += '</div>';
+  });
+
+  box.innerHTML = html;
+
+  box.querySelectorAll('.test-toggle').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var body = btn.parentElement.querySelector('.test-group-body');
+      var willHide = !body.hidden;
+      body.hidden = willHide;
+      var caret = btn.querySelector('.test-toggle-caret');
+      if (caret) caret.textContent = (willHide ? '▸ show' : '▾ hide');
+    });
+  });
+
+  box.scrollIntoView({ behavior: 'smooth' });
+}
+
+function buildTable(arr) {
+  var html = '<table class="test-table"><thead><tr><th>Service</th><th>Identity</th><th>Access / Detail</th></tr></thead><tbody>';
+  arr.forEach(function(r){
+    html += '<tr>'
          + '<td>' + escapeHtml(r.service || '—') + '</td>'
          + '<td>' + escapeHtml(r.identity || '—') + '</td>'
          + '<td class="mono">' + escapeHtml(r.access || '—') + '</td></tr>';
   });
   html += '</tbody></table>';
-  box.innerHTML = html;
-  box.scrollIntoView({ behavior: 'smooth' });
+  return html;
 }
 
 function escapeHtml(s) {
