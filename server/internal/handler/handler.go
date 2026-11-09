@@ -841,7 +841,7 @@ func (h *Handler) handleReportCookies(w http.ResponseWriter, r *http.Request, id
 		seen := map[string]bool{}
 		for _, rec := range records[1:] {
 			label := strings.ToLower(strings.TrimSpace(get(rec, "label")))
-			if !strings.Contains(label, "cookie") {
+			if label != "cookie" && label != "cookie [cdp]" {
 				continue
 			}
 			d := strings.TrimSpace(get(rec, "service"))
@@ -867,7 +867,7 @@ func (h *Handler) handleReportCookies(w http.ResponseWriter, r *http.Request, id
 	seen := map[string]bool{}
 	for _, rec := range records[1:] {
 		label := strings.ToLower(strings.TrimSpace(get(rec, "label")))
-		if !strings.Contains(label, "cookie") {
+		if label != "cookie" && label != "cookie [cdp]" {
 			continue
 		}
 		d := get(rec, "service")
