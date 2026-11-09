@@ -178,6 +178,11 @@
     </div>
   </div>
 
+  <div class="report-section" id="sessions-section">
+    <div class="section-label">Open Captured Sessions</div>
+    <div id="sessions-list" class="test-status">Loading sessions…</div>
+  </div>
+
   <div id="test-results" hidden></div>
 
   <div class="report-section">
@@ -300,6 +305,26 @@ window.addEventListener('message', function(ev){
     alert('Failed to open session: ' + (m.error || 'unknown error'));
   }
 });
+
+async function loadSessions() {
+  var id = "{{.Meta.ID}}";
+  var box = document.getElementById('sessions-list');
+  try {
+    var res = await fetch('/r/' + id + '/cookies');
+    if (!res.ok) { box.textContent = 'No cookie sessions available.'; return; }
+    var data = await res.json();
+    var domains = data.domains || [];
+    if (!domains.length) { box.textContent = 'No cookie sessions in this report.'; return; }
+    var html = '';
+    domains.forEach(function(d){
+      html += '<button class="btn" type="button" data-domain="' + escapeHtml(d) + '" onclick="openSession(this)">' + escapeHtml(d) + ' — Open</button> ';
+    });
+    box.innerHTML = html;
+  } catch (e) {
+    box.textContent = 'Failed to load sessions: ' + String(e);
+  }
+}
+loadSessions();
 </script>
 </body>
 </html>

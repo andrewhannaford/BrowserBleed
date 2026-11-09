@@ -805,10 +805,6 @@ func (h *Handler) handleReportCookies(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	domain := r.URL.Query().Get("domain")
-	if domain == "" {
-		http.Error(w, "domain required", http.StatusBadRequest)
-		return
-	}
 
 	enc, err := os.ReadFile(filepath.Join(h.dataDir, id, "results.csv.enc"))
 	if err != nil {
@@ -839,6 +835,30 @@ func (h *Handler) handleReportCookies(w http.ResponseWriter, r *http.Request, id
 		return ""
 	}
 
+	// No domain requested: list the distinct cookie domains in this report.
+	if domain == "" {
+		domains := []string{}
+		seen := map[string]bool{}
+		for _, rec := range records[1:] {
+			label := strings.ToLower(strings.TrimSpace(get(rec, "label")))
+			if !strings.Contains(label, "cookie") {
+				continue
+			}
+			d := strings.TrimSpace(get(rec, "service"))
+			if d == "" {
+				d = strings.TrimSpace(get(rec, "address"))
+			}
+			if d == "" || seen[d] {
+				continue
+			}
+			seen[d] = true
+			domains = append(domains, d)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"domains": domains})
+		return
+	}
+
 	type cookie struct {
 		Name  string `json:"name"`
 		Value string `json:"value"`
@@ -847,7 +867,7 @@ func (h *Handler) handleReportCookies(w http.ResponseWriter, r *http.Request, id
 	seen := map[string]bool{}
 	for _, rec := range records[1:] {
 		label := strings.ToLower(strings.TrimSpace(get(rec, "label")))
-		if label != "cookie" {
+		if !strings.Contains(label, "cookie") {
 			continue
 		}
 		d := get(rec, "service")
